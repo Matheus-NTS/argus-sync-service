@@ -1,0 +1,28 @@
+# Ambiente virtual Python
+.venv/
+venv/
+
+# Variáveis de ambiente / senhas
+.env
+config/.env
+argus-sync/config/.env
+
+# Logs
+logs/
+*.log
+
+# Cache Python
+__pycache__/
+*.pyc
+*.pyo
+
+# VS Code
+.vscode/
+
+# Sistema operacional
+.DS_Store
+Thumbs.db
+
+# Arquivos temporários
+*.tmp
+*.bak
