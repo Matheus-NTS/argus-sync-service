@@ -9,12 +9,15 @@ class ExecutiveDashboard:
     def build(self, pedidos_df, metas_df=None):
 
         faturamento_total = self.sales.total_revenue(pedidos_df)
+        pedidos_unicos = pedidos_df["numero_pedido"].nunique()
+        itens_vendidos = len(pedidos_df)
 
         data = {
             "faturamento_total": faturamento_total,
-            "pedidos": len(pedidos_df),
+            "pedidos": pedidos_unicos,
+            "itens_vendidos": itens_vendidos,
             "clientes": pedidos_df["codigo_cliente"].nunique(),
-            "ticket_medio": faturamento_total / len(pedidos_df) if len(pedidos_df) > 0 else 0,
+            "ticket_medio": faturamento_total / pedidos_unicos if pedidos_unicos > 0 else 0,
         }
 
         if metas_df is not None and len(metas_df) > 0:

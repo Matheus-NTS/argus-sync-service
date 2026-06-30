@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from connectors.sql_server import SQLServerConnector
+from connectors.supabase_connector import SupabaseConnector
 from extractors.pedido_extractor import PedidoExtractor
 from extractors.meta_extractor import MetaExtractor
 from transformers.pedido_transformer import PedidoTransformer
@@ -16,15 +17,14 @@ def main():
     print("=" * 60)
 
     connector = SQLServerConnector()
+    supabase = SupabaseConnector()
 
-    # Extração
     pedido_extractor = PedidoExtractor(connector)
     meta_extractor = MetaExtractor(connector)
 
     pedidos = pedido_extractor.extract()
     metas = meta_extractor.extract()
 
-    # Transformações
     pedido_transformer = PedidoTransformer()
     period_transformer = PeriodTransformer()
 
@@ -32,50 +32,35 @@ def main():
 
     hoje = datetime.today()
 
-    pedidos = period_transformer.filter_by_month(
-        pedidos,
-        "Data",
-        hoje.month,
-        hoje.year
-    )
-
-    metas = metas[
-        (metas["mes"] == hoje.month) &
-        (metas["ano"] == hoje.year)
-    ]
+    pedidos_mes = period_transformer.filter_by_month(pedidos, "Data", hoje.month, hoje.year)
+    metas_mes = metas[(metas["mes"] == hoje.month) & (metas["ano"] == hoje.year)]
 
     goal_metrics = GoalMetrics()
-    metas = goal_metrics.add_goal_levels(metas)
+    metas_mes = goal_metrics.add_goal_levels(metas_mes)
 
     dashboard = ExecutiveDashboard()
+    dados = dashboard.build(pedidos_mes, metas_mes)
 
-    dados = dashboard.build(
-        pedidos,
-        metas
-    )
+    snapshot = {
+        "reference_date": hoje.date().isoformat(),
+        "period_type": "current_month",
+        "faturamento_total": round(float(dados["faturamento_total"]), 2),
+        "pedidos": int(dados["pedidos"]),
+        "itens_vendidos": int(dados["itens_vendidos"]),
+        "clientes": int(dados["clientes"]),
+        "ticket_medio": round(float(dados["ticket_medio"]), 2),
+        "meta_base": round(float(dados["meta_base"]), 2),
+        "super_meta": round(float(dados["super_meta"]), 2),
+        "hiper_meta": round(float(dados["hiper_meta"]), 2),
+        "atingimento_meta_base": round(float(dados["atingimento_meta_base"]), 4),
+        "atingimento_super_meta": round(float(dados["atingimento_super_meta"]), 4),
+        "atingimento_hiper_meta": round(float(dados["atingimento_hiper_meta"]), 4),
+    }
 
-    print()
+    supabase.insert("executive_dashboard_snapshot", snapshot)
 
-    print("=" * 60)
-    print(f"DASHBOARD EXECUTIVO - {hoje.strftime('%m/%Y')}")
-    print("=" * 60)
-
-    print(f"Faturamento : R$ {dados['faturamento_total']:,.2f}")
-    print(f"Pedidos     : {dados['pedidos']:,}")
-    print(f"Clientes    : {dados['clientes']:,}")
-    print(f"Ticket Médio: R$ {dados['ticket_medio']:,.2f}")
-
-    print()
-
-    print(f"Meta Base   : R$ {dados['meta_base']:,.2f}")
-    print(f"Super Meta  : R$ {dados['super_meta']:,.2f}")
-    print(f"Hiper Meta  : R$ {dados['hiper_meta']:,.2f}")
-
-    print()
-
-    print(f"Atingimento Meta  : {dados['atingimento_meta_base']:.2%}")
-    print(f"Ating. Super Meta : {dados['atingimento_super_meta']:.2%}")
-    print(f"Ating. Hiper Meta : {dados['atingimento_hiper_meta']:.2%}")
+    print("Snapshot gravado no Supabase com sucesso!")
+    print(snapshot)
 
 
 if __name__ == "__main__":
