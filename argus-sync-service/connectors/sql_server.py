@@ -1,5 +1,9 @@
 import os
+from urllib.parse import quote_plus
+
+import pandas as pd
 from dotenv import load_dotenv
+from sqlalchemy import create_engine, text
 
 
 class SQLServerConnector:
@@ -13,11 +17,21 @@ class SQLServerConnector:
         self.password = os.getenv("SQL_PASSWORD")
         self.driver = os.getenv("SQL_DRIVER")
 
-    def show_config(self):
-        print("SQL Server configuration loaded:")
-        print(f"Server: {self.server}")
-        print(f"Port: {self.port}")
-        print(f"Database: {self.database}")
-        print(f"User: {self.user}")
-        print(f"Driver: {self.driver}")
-        print("Password: ********")
+        self.engine = self._create_engine()
+
+    def _create_engine(self):
+        driver_encoded = quote_plus(self.driver)
+
+        connection_string = (
+    f"mssql+pyodbc://{self.user}:{self.password}"
+    f"@{self.server}:{self.port}/{self.database}"
+    f"?driver={driver_encoded}"
+    f"&TrustServerCertificate=yes"
+)
+
+        return create_engine(connection_string)
+
+    def test_connection(self):
+        query = text("SELECT TOP 10 * FROM dbo.agrc_pedido_lucas")
+        df = pd.read_sql(query, self.engine)
+        return df
