@@ -34,7 +34,10 @@ def main():
     hoje = datetime.today()
 
     pedidos_mes = period_transformer.filter_by_month(
-        pedidos, "Data", hoje.month, hoje.year
+        pedidos,
+        "Data",
+        hoje.month,
+        hoje.year
     )
 
     metas_mes = metas[
@@ -64,7 +67,11 @@ def main():
         "atingimento_hiper_meta": round(float(dashboard_data["atingimento_hiper_meta"]), 4),
     }
 
-    supabase.insert("executive_dashboard_snapshot", executive_snapshot)
+    supabase.upsert(
+        "executive_dashboard_snapshot",
+        executive_snapshot,
+        "reference_date,period_type"
+    )
 
     seller_ranking = SellerRanking()
     ranking_df = seller_ranking.build(pedidos_mes)
@@ -76,7 +83,8 @@ def main():
             "reference_date": hoje.date().isoformat(),
             "period_type": "current_month",
             "vendedor": row["Vendedor"],
-            "empresa": row["Empresa"],
+            "empresa": "TOTAL",
+            "empresa_breakdown": row["empresa_breakdown"],
             "faturamento_total": round(float(row["faturamento_total"]), 2),
             "pedidos": int(row["pedidos"]),
             "itens_vendidos": int(row["itens_vendidos"]),
@@ -85,10 +93,14 @@ def main():
         })
 
     if ranking_records:
-        supabase.insert("sales_seller_ranking_snapshot", ranking_records)
+        supabase.upsert(
+            "sales_seller_ranking_snapshot",
+            ranking_records,
+            "reference_date,period_type,vendedor"
+        )
 
-    print("Snapshot executivo gravado no Supabase.")
-    print(f"Ranking de vendedores gravado: {len(ranking_records)} vendedores.")
+    print("Snapshot executivo atualizado no Supabase.")
+    print(f"Ranking de vendedores atualizado: {len(ranking_records)} vendedores.")
     print(ranking_df.head(10))
 
 

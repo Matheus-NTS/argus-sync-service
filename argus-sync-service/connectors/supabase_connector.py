@@ -20,3 +20,13 @@ class SupabaseConnector:
     def insert(self, table_name, data):
         response = self.client.table(table_name).insert(data).execute()
         return response
+
+    def upsert(self, table_name, data, conflict_columns):
+        response = (
+            self.client
+            .table(table_name)
+            .upsert(data, on_conflict=conflict_columns)
+            .execute()
+        )
+
+        return response
