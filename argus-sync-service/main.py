@@ -2,6 +2,7 @@ from connectors.sql_server import SQLServerConnector
 from extractors.pedido_extractor import PedidoExtractor
 from extractors.meta_extractor import MetaExtractor
 from transformers.pedido_transformer import PedidoTransformer
+from services.goal_metrics import GoalMetrics
 from features.executive_dashboard.executive_dashboard import ExecutiveDashboard
 
 
@@ -20,7 +21,10 @@ def main():
     metas = meta_extractor.extract()
 
     transformer = PedidoTransformer()
+    goal_metrics = GoalMetrics()
+
     pedidos_faturamento = transformer.filter_revenue_orders(pedidos)
+    metas_calculadas = goal_metrics.add_goal_levels(metas)
 
     dashboard = ExecutiveDashboard()
     dados = dashboard.build(pedidos_faturamento)
@@ -42,9 +46,14 @@ def main():
 
     print()
     print("=" * 60)
-    print("AMOSTRA DE METAS")
+    print("METAS CALCULADAS")
     print("=" * 60)
-    print(metas.head())
+
+    print(
+        metas_calculadas[
+            ["mes", "ano", "vendedor", "Empresa", "meta_base", "super_meta", "hiper_meta"]
+        ].head()
+    )
 
 
 if __name__ == "__main__":
