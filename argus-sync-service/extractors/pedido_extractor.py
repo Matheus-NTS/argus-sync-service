@@ -10,12 +10,11 @@ class PedidoExtractor:
     def extract(self):
 
         query = text("""
-
             SELECT *
             FROM dbo.agrc_pedido_lucas
-
         """)
 
         df = pd.read_sql(query, self.connector.engine)
+
 
         return df
