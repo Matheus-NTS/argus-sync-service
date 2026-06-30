@@ -1,0 +1,11 @@
+{
+  "sales": {
+    "valid_revenue_status": [
+      "CONCRETIZADO"
+    ]
+  },
+  "goals": {
+    "super_goal_percent": 0.24,
+    "hyper_goal_percent": 0.37
+  }
+}
