@@ -9,7 +9,9 @@ from features.sales.company_performance import CompanyPerformance
 from features.sales.product_performance import ProductPerformance
 from features.sales.customer_performance import CustomerPerformance
 from features.sales.category_performance import CategoryPerformance
+
 from features.intelligence.commercial.commercial_facts import CommercialFacts
+from features.intelligence.commercial.commercial_summary import CommercialSummary
 
 
 class SalesPipeline:
@@ -48,7 +50,6 @@ class SalesPipeline:
         category = CategoryPerformance()
         category_df = category.build(pedidos_mes)
 
-        # Vendedores
         ranking_records = []
         for _, row in ranking_df.iterrows():
             ranking_records.append({
@@ -70,7 +71,6 @@ class SalesPipeline:
             ranking_records
         )
 
-        # Empresas
         company_records = []
         for _, row in company_df.iterrows():
             company_records.append({
@@ -90,7 +90,6 @@ class SalesPipeline:
             company_records
         )
 
-        # Produtos
         product_records = []
         for _, row in product_df.iterrows():
             product_records.append({
@@ -113,7 +112,6 @@ class SalesPipeline:
             product_records
         )
 
-        # Clientes
         customer_records = []
         for _, row in customer_df.iterrows():
             customer_records.append({
@@ -135,7 +133,6 @@ class SalesPipeline:
             customer_records
         )
 
-        # Categorias
         category_records = []
         for _, row in category_df.iterrows():
             category_records.append({
@@ -156,7 +153,6 @@ class SalesPipeline:
             category_records
         )
 
-        # Commercial Facts
         commercial_facts = CommercialFacts()
         facts = commercial_facts.build(
             ranking_df,
@@ -184,11 +180,27 @@ class SalesPipeline:
             fact_records
         )
 
+        commercial_summary = CommercialSummary()
+        summary_text = commercial_summary.build(facts)
+
+        summary_records = [{
+            "reference_date": hoje.date().isoformat(),
+            "period_type": "current_month",
+            "summary": summary_text
+        }]
+
+        self.supabase.replace_snapshot(
+            "mart_commercial_summary",
+            {"reference_date": hoje.date().isoformat(), "period_type": "current_month"},
+            summary_records
+        )
+
         return {
             "seller_ranking": len(ranking_records),
             "companies": len(company_records),
             "products": len(product_records),
             "customers": len(customer_records),
             "categories": len(category_records),
-            "commercial_facts": len(fact_records)
+            "commercial_facts": len(fact_records),
+            "commercial_summary": len(summary_records)
         }

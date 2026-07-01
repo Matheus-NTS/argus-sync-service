@@ -32,6 +32,7 @@ def main():
     print(f"  Clientes: {sales_result['customers']}")
     print(f"  Categorias: {sales_result['categories']}")
     print(f"  Commercial Facts: {sales_result['commercial_facts']}")
+    print(f"  Commercial Summary: {sales_result['commercial_summary']}")
 
     print()
     print("=" * 60)
