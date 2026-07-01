@@ -33,72 +33,58 @@ class SalesPipeline:
             hoje.year
         )
 
-        # ==========================
-        # Ranking de vendedores
-        # ==========================
-
         seller_ranking = SellerRanking()
-
         ranking_df = seller_ranking.build(pedidos_mes)
 
         ranking_records = []
 
         for _, row in ranking_df.iterrows():
-
             ranking_records.append({
-
                 "reference_date": hoje.date().isoformat(),
                 "period_type": "current_month",
-
                 "vendedor": row["Vendedor"],
                 "empresa": "TOTAL",
                 "empresa_breakdown": row["empresa_breakdown"],
-
                 "faturamento_total": round(float(row["faturamento_total"]), 2),
                 "pedidos": int(row["pedidos"]),
                 "itens_vendidos": int(row["itens_vendidos"]),
                 "clientes": int(row["clientes"]),
                 "ticket_medio": round(float(row["ticket_medio"]), 2)
-
             })
 
-        self.supabase.upsert(
+        self.supabase.replace_snapshot(
             "sales_seller_ranking_snapshot",
-            ranking_records,
-            "reference_date,period_type,vendedor"
+            {
+                "reference_date": hoje.date().isoformat(),
+                "period_type": "current_month"
+            },
+            ranking_records
         )
 
-        # ==========================
-        # Performance por empresa
-        # ==========================
-
         company = CompanyPerformance()
-
         company_df = company.build(pedidos_mes)
 
         company_records = []
 
         for _, row in company_df.iterrows():
-
             company_records.append({
-
                 "reference_date": hoje.date().isoformat(),
                 "period_type": "current_month",
-
                 "empresa": row["Empresa"],
-
                 "faturamento_total": round(float(row["faturamento_total"]), 2),
                 "pedidos": int(row["pedidos"]),
                 "itens_vendidos": int(row["itens_vendidos"]),
                 "clientes": int(row["clientes"]),
                 "ticket_medio": round(float(row["ticket_medio"]), 2)
-
             })
 
-        self.supabase.upsert(
+        self.supabase.replace_snapshot(
             "mart_sales_company_snapshot",
-            company_records,
-            "reference_date,period_type,empresa"
+            {
+                "reference_date": hoje.date().isoformat(),
+                "period_type": "current_month"
+            },
+            company_records
         )
 
         return {

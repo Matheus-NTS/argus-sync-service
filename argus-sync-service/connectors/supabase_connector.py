@@ -47,3 +47,18 @@ class SupabaseConnector:
             query = query.eq(column, value)
 
         return query.execute()
+
+    def replace_snapshot(self, table_name, filters, data):
+
+        self.delete_where(
+            table_name,
+            filters
+        )
+
+        if not data:
+            return None
+
+        return self.insert(
+            table_name,
+            data
+        )
