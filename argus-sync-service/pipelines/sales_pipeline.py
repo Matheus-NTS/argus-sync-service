@@ -8,6 +8,7 @@ from features.sales.seller_ranking import SellerRanking
 from features.sales.company_performance import CompanyPerformance
 from features.sales.product_performance import ProductPerformance
 from features.sales.customer_performance import CustomerPerformance
+from features.sales.category_performance import CategoryPerformance
 
 
 class SalesPipeline:
@@ -146,9 +147,37 @@ class SalesPipeline:
             customer_records
         )
 
+        category = CategoryPerformance()
+        category_df = category.build(pedidos_mes)
+
+        category_records = []
+
+        for _, row in category_df.iterrows():
+            category_records.append({
+                "reference_date": hoje.date().isoformat(),
+                "period_type": "current_month",
+                "categoria": row["Categoria"],
+                "faturamento_total": round(float(row["faturamento_total"]), 2),
+                "pedidos": int(row["pedidos"]),
+                "itens_vendidos": int(row["itens_vendidos"]),
+                "clientes": int(row["clientes"]),
+                "produtos": int(row["produtos"]),
+                "ticket_medio": round(float(row["ticket_medio"]), 2)
+            })
+
+        self.supabase.replace_snapshot(
+            "mart_sales_category_snapshot",
+            {
+                "reference_date": hoje.date().isoformat(),
+                "period_type": "current_month"
+            },
+            category_records
+        )
+
         return {
             "seller_ranking": len(ranking_records),
             "companies": len(company_records),
             "products": len(product_records),
-            "customers": len(customer_records)
+            "customers": len(customer_records),
+            "categories": len(category_records)
         }

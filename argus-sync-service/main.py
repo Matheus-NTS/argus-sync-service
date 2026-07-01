@@ -38,6 +38,7 @@ def main():
     print(f"  Empresas: {sales_result['companies']}")
     print(f"  Produtos: {sales_result['products']}")
     print(f"  Clientes: {sales_result['customers']}")
+    print(f"  Categorias: {sales_result['categories']}")
 
     print()
     print("=" * 60)
