@@ -4,6 +4,7 @@ from features.intelligence.commercial.commercial_facts import CommercialFacts
 from features.intelligence.commercial.commercial_summary import CommercialSummary
 from features.intelligence.commercial.commercial_recommendations import CommercialRecommendations
 from features.intelligence.commercial.abc_analysis import ABCAnalysis
+from features.intelligence.commercial.customer_abc_analysis import CustomerABCAnalysis
 
 
 class CommercialIntelligencePipeline:
@@ -15,8 +16,7 @@ class CommercialIntelligencePipeline:
 
         hoje = datetime.today()
 
-        commercial_facts = CommercialFacts()
-        facts = commercial_facts.build(
+        facts = CommercialFacts().build(
             ranking_df,
             company_df,
             product_df,
@@ -43,13 +43,10 @@ class CommercialIntelligencePipeline:
             fact_records
         )
 
-        commercial_summary = CommercialSummary()
-        summary_text = commercial_summary.build(facts)
-
         summary_records = [{
             "reference_date": hoje.date().isoformat(),
             "period_type": "current_month",
-            "summary": summary_text
+            "summary": CommercialSummary().build(facts)
         }]
 
         self.supabase.replace_snapshot(
@@ -58,8 +55,7 @@ class CommercialIntelligencePipeline:
             summary_records
         )
 
-        commercial_recommendations = CommercialRecommendations()
-        recommendations = commercial_recommendations.build(facts)
+        recommendations = CommercialRecommendations().build(facts)
 
         recommendation_records = []
 
@@ -79,13 +75,12 @@ class CommercialIntelligencePipeline:
             recommendation_records
         )
 
-        abc = ABCAnalysis()
-        abc_df = abc.build(product_df)
+        product_abc_df = ABCAnalysis().build(product_df)
 
-        abc_records = []
+        product_abc_records = []
 
-        for _, row in abc_df.iterrows():
-            abc_records.append({
+        for _, row in product_abc_df.iterrows():
+            product_abc_records.append({
                 "reference_date": hoje.date().isoformat(),
                 "period_type": "current_month",
                 "prod_codigo": row["prod_codigo"],
@@ -100,12 +95,36 @@ class CommercialIntelligencePipeline:
         self.supabase.replace_snapshot(
             "mart_sales_product_abc_snapshot",
             {"reference_date": hoje.date().isoformat(), "period_type": "current_month"},
-            abc_records
+            product_abc_records
+        )
+
+        customer_abc_df = CustomerABCAnalysis().build(customer_df)
+
+        customer_abc_records = []
+
+        for _, row in customer_abc_df.iterrows():
+            customer_abc_records.append({
+                "reference_date": hoje.date().isoformat(),
+                "period_type": "current_month",
+                "codigo_cliente": str(row["codigo_cliente"]),
+                "cliente": row["Cliente"],
+                "faturamento_total": round(float(row["faturamento_total"]), 2),
+                "percentual": round(float(row["percentual"]), 4),
+                "percentual_acumulado": round(float(row["percentual_acumulado"]), 4),
+                "classe": row["classe"],
+                "ranking": int(row["ranking"])
+            })
+
+        self.supabase.replace_snapshot(
+            "mart_sales_customer_abc_snapshot",
+            {"reference_date": hoje.date().isoformat(), "period_type": "current_month"},
+            customer_abc_records
         )
 
         return {
             "commercial_facts": len(fact_records),
             "commercial_summary": len(summary_records),
             "commercial_recommendations": len(recommendation_records),
-            "abc_products": len(abc_records)
+            "abc_products": len(product_abc_records),
+            "abc_customers": len(customer_abc_records)
         }
