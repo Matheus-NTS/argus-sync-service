@@ -12,6 +12,7 @@ from features.sales.category_performance import CategoryPerformance
 
 from features.intelligence.commercial.commercial_facts import CommercialFacts
 from features.intelligence.commercial.commercial_summary import CommercialSummary
+from features.intelligence.commercial.commercial_recommendations import CommercialRecommendations
 
 
 class SalesPipeline:
@@ -195,6 +196,26 @@ class SalesPipeline:
             summary_records
         )
 
+        commercial_recommendations = CommercialRecommendations()
+        recommendations = commercial_recommendations.build(facts)
+
+        recommendation_records = []
+        for recommendation in recommendations:
+            recommendation_records.append({
+                "reference_date": hoje.date().isoformat(),
+                "period_type": "current_month",
+                "recommendation_type": recommendation["recommendation_type"],
+                "priority": recommendation["priority"],
+                "title": recommendation["title"],
+                "description": recommendation["description"]
+            })
+
+        self.supabase.replace_snapshot(
+            "mart_commercial_recommendations",
+            {"reference_date": hoje.date().isoformat(), "period_type": "current_month"},
+            recommendation_records
+        )
+
         return {
             "seller_ranking": len(ranking_records),
             "companies": len(company_records),
@@ -202,5 +223,6 @@ class SalesPipeline:
             "customers": len(customer_records),
             "categories": len(category_records),
             "commercial_facts": len(fact_records),
-            "commercial_summary": len(summary_records)
+            "commercial_summary": len(summary_records),
+            "commercial_recommendations": len(recommendation_records)
         }
