@@ -14,18 +14,10 @@ def main():
     sql_connector = SQLServerConnector()
     supabase_connector = SupabaseConnector()
 
-    executive = ExecutivePipeline(
-        sql_connector,
-        supabase_connector
-    )
-
+    executive = ExecutivePipeline(sql_connector, supabase_connector)
     executive_result = executive.run()
 
-    sales = SalesPipeline(
-        sql_connector,
-        supabase_connector
-    )
-
+    sales = SalesPipeline(sql_connector, supabase_connector)
     sales_result = sales.run()
 
     print()
@@ -39,6 +31,7 @@ def main():
     print(f"  Produtos: {sales_result['products']}")
     print(f"  Clientes: {sales_result['customers']}")
     print(f"  Categorias: {sales_result['categories']}")
+    print(f"  Commercial Facts: {sales_result['commercial_facts']}")
 
     print()
     print("=" * 60)
