@@ -14,20 +14,12 @@ def main():
     sql_connector = SQLServerConnector()
     supabase_connector = SupabaseConnector()
 
-    # ==========================
-    # Executive
-    # ==========================
-
     executive = ExecutivePipeline(
         sql_connector,
         supabase_connector
     )
 
     executive_result = executive.run()
-
-    # ==========================
-    # Sales
-    # ==========================
 
     sales = SalesPipeline(
         sql_connector,
@@ -36,23 +28,18 @@ def main():
 
     sales_result = sales.run()
 
-    # ==========================
-    # LOG
-    # ==========================
-
     print()
-
     print("✓ Executive Pipeline finalizada")
     print(f"  Insights: {executive_result['insights_count']}")
 
     print()
-
     print("✓ Sales Pipeline finalizada")
     print(f"  Ranking: {sales_result['seller_ranking']} vendedores")
     print(f"  Empresas: {sales_result['companies']}")
+    print(f"  Produtos: {sales_result['products']}")
+    print(f"  Clientes: {sales_result['customers']}")
 
     print()
-
     print("=" * 60)
     print("ARGUS SYNC FINALIZADO")
     print("=" * 60)

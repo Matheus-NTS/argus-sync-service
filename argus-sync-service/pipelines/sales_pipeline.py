@@ -6,6 +6,8 @@ from transformers.period_transformer import PeriodTransformer
 
 from features.sales.seller_ranking import SellerRanking
 from features.sales.company_performance import CompanyPerformance
+from features.sales.product_performance import ProductPerformance
+from features.sales.customer_performance import CustomerPerformance
 
 
 class SalesPipeline:
@@ -87,7 +89,66 @@ class SalesPipeline:
             company_records
         )
 
+        product = ProductPerformance()
+        product_df = product.build(pedidos_mes)
+
+        product_records = []
+
+        for _, row in product_df.iterrows():
+            product_records.append({
+                "reference_date": hoje.date().isoformat(),
+                "period_type": "current_month",
+                "prod_codigo": row["prod_codigo"],
+                "produto": row["produto"],
+                "classificacao": row["Classificacao"],
+                "unidade": row["unidade"],
+                "faturamento_total": round(float(row["faturamento_total"]), 2),
+                "quantidade": float(row["quantidade"]),
+                "pedidos": int(row["pedidos"]),
+                "clientes": int(row["clientes"]),
+                "ticket_medio": round(float(row["ticket_medio"]), 2)
+            })
+
+        self.supabase.replace_snapshot(
+            "mart_sales_product_snapshot",
+            {
+                "reference_date": hoje.date().isoformat(),
+                "period_type": "current_month"
+            },
+            product_records
+        )
+
+        customer = CustomerPerformance()
+        customer_df = customer.build(pedidos_mes)
+
+        customer_records = []
+
+        for _, row in customer_df.iterrows():
+            customer_records.append({
+                "reference_date": hoje.date().isoformat(),
+                "period_type": "current_month",
+                "codigo_cliente": str(row["codigo_cliente"]),
+                "cliente": row["Cliente"],
+                "faturamento_total": round(float(row["faturamento_total"]), 2),
+                "pedidos": int(row["pedidos"]),
+                "itens_vendidos": int(row["itens_vendidos"]),
+                "mix_produtos": int(row["mix_produtos"]),
+                "ticket_medio": round(float(row["ticket_medio"]), 2),
+                "ultima_compra": row["ultima_compra"].date().isoformat()
+            })
+
+        self.supabase.replace_snapshot(
+            "mart_sales_customer_snapshot",
+            {
+                "reference_date": hoje.date().isoformat(),
+                "period_type": "current_month"
+            },
+            customer_records
+        )
+
         return {
             "seller_ranking": len(ranking_records),
-            "companies": len(company_records)
+            "companies": len(company_records),
+            "products": len(product_records),
+            "customers": len(customer_records)
         }
