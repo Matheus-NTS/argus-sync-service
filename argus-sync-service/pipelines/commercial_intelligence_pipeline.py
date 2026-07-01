@@ -24,6 +24,15 @@ class CommercialIntelligencePipeline:
             category_df
         )
 
+        product_abc_df = ABCAnalysis().build(product_df)
+        customer_abc_df = CustomerABCAnalysis().build(customer_df)
+
+        recommendations = CommercialRecommendations().build(
+            facts,
+            product_abc_df,
+            customer_abc_df
+        )
+
         fact_records = []
 
         for fact in facts:
@@ -55,8 +64,6 @@ class CommercialIntelligencePipeline:
             summary_records
         )
 
-        recommendations = CommercialRecommendations().build(facts)
-
         recommendation_records = []
 
         for recommendation in recommendations:
@@ -74,8 +81,6 @@ class CommercialIntelligencePipeline:
             {"reference_date": hoje.date().isoformat(), "period_type": "current_month"},
             recommendation_records
         )
-
-        product_abc_df = ABCAnalysis().build(product_df)
 
         product_abc_records = []
 
@@ -97,8 +102,6 @@ class CommercialIntelligencePipeline:
             {"reference_date": hoje.date().isoformat(), "period_type": "current_month"},
             product_abc_records
         )
-
-        customer_abc_df = CustomerABCAnalysis().build(customer_df)
 
         customer_abc_records = []
 
