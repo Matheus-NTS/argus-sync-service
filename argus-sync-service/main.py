@@ -1,6 +1,8 @@
 from connectors.sql_server import SQLServerConnector
 from connectors.supabase_connector import SupabaseConnector
+
 from pipelines.executive_pipeline import ExecutivePipeline
+from pipelines.sales_pipeline import SalesPipeline
 
 
 def main():
@@ -12,19 +14,48 @@ def main():
     sql_connector = SQLServerConnector()
     supabase_connector = SupabaseConnector()
 
-    executive_pipeline = ExecutivePipeline(
+    # ==========================
+    # Executive
+    # ==========================
+
+    executive = ExecutivePipeline(
         sql_connector,
         supabase_connector
     )
 
-    result = executive_pipeline.run()
+    executive_result = executive.run()
+
+    # ==========================
+    # Sales
+    # ==========================
+
+    sales = SalesPipeline(
+        sql_connector,
+        supabase_connector
+    )
+
+    sales_result = sales.run()
+
+    # ==========================
+    # LOG
+    # ==========================
 
     print()
-    print("Pipeline executada com sucesso.")
-    print(f"Ranking atualizado: {result['seller_ranking_count']} vendedores.")
-    print(f"Insights gerados: {result['insights_count']}.")
+
+    print("✓ Executive Pipeline finalizada")
+    print(f"  Insights: {executive_result['insights_count']}")
+
     print()
-    print("ARGUS Sync finalizado com sucesso.")
+
+    print("✓ Sales Pipeline finalizada")
+    print(f"  Ranking: {sales_result['seller_ranking']} vendedores")
+    print(f"  Empresas: {sales_result['companies']}")
+
+    print()
+
+    print("=" * 60)
+    print("ARGUS SYNC FINALIZADO")
+    print("=" * 60)
 
 
 if __name__ == "__main__":

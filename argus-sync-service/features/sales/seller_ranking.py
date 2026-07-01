@@ -1,11 +1,21 @@
 class SellerRanking:
 
     def normalize_name(self, name):
-        return str(name).strip().title()
+        particles = {"de", "da", "do", "das", "dos", "e"}
+
+        words = str(name).strip().lower().split()
+
+        formatted_words = [
+            word if word in particles else word.capitalize()
+            for word in words
+        ]
+
+        return " ".join(formatted_words)
 
     def build(self, pedidos_df):
 
         df = pedidos_df.copy()
+
         df["Vendedor"] = df["Vendedor"].apply(self.normalize_name)
         df["Empresa"] = df["Empresa"].apply(lambda x: str(x).strip())
 
@@ -53,9 +63,7 @@ class SellerRanking:
 
         total_ranking["empresa_breakdown"] = total_ranking["Vendedor"].map(breakdown_map)
 
-        total_ranking = total_ranking.sort_values(
+        return total_ranking.sort_values(
             by="faturamento_total",
             ascending=False
         )
-
-        return total_ranking

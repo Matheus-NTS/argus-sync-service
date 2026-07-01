@@ -7,7 +7,8 @@ from supabase import create_client
 class SupabaseConnector:
 
     def __init__(self):
-        load_dotenv(dotenv_path="config/.env")
+
+        load_dotenv("config/.env")
 
         self.url = os.getenv("SUPABASE_URL")
         self.key = os.getenv("SUPABASE_SECRET_KEY")
@@ -18,15 +19,31 @@ class SupabaseConnector:
         )
 
     def insert(self, table_name, data):
-        response = self.client.table(table_name).insert(data).execute()
-        return response
 
-    def upsert(self, table_name, data, conflict_columns):
-        response = (
+        return (
             self.client
             .table(table_name)
-            .upsert(data, on_conflict=conflict_columns)
+            .insert(data)
             .execute()
         )
 
-        return response
+    def upsert(self, table_name, data, conflict_columns):
+
+        return (
+            self.client
+            .table(table_name)
+            .upsert(
+                data,
+                on_conflict=conflict_columns
+            )
+            .execute()
+        )
+
+    def delete_where(self, table_name, filters):
+
+        query = self.client.table(table_name).delete()
+
+        for column, value in filters.items():
+            query = query.eq(column, value)
+
+        return query.execute()

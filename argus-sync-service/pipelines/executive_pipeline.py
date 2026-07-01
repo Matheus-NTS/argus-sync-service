@@ -9,7 +9,6 @@ from transformers.period_transformer import PeriodTransformer
 from services.goal_metrics import GoalMetrics
 
 from features.executive_dashboard.executive_dashboard import ExecutiveDashboard
-from features.sales.seller_ranking import SellerRanking
 from features.insights.executive_insights import ExecutiveInsights
 
 
@@ -74,34 +73,16 @@ class ExecutivePipeline:
             "reference_date,period_type"
         )
 
-        seller_ranking = SellerRanking()
-        ranking_df = seller_ranking.build(pedidos_mes)
-
-        ranking_records = []
-
-        for _, row in ranking_df.iterrows():
-            ranking_records.append({
+        self.supabase.delete_where(
+            "mart_executive_insights",
+            {
                 "reference_date": hoje.date().isoformat(),
-                "period_type": "current_month",
-                "vendedor": row["Vendedor"],
-                "empresa": "TOTAL",
-                "empresa_breakdown": row["empresa_breakdown"],
-                "faturamento_total": round(float(row["faturamento_total"]), 2),
-                "pedidos": int(row["pedidos"]),
-                "itens_vendidos": int(row["itens_vendidos"]),
-                "clientes": int(row["clientes"]),
-                "ticket_medio": round(float(row["ticket_medio"]), 2),
-            })
-
-        if ranking_records:
-            self.supabase.upsert(
-                "sales_seller_ranking_snapshot",
-                ranking_records,
-                "reference_date,period_type,vendedor"
-            )
+                "period_type": "current_month"
+            }
+        )
 
         executive_insights = ExecutiveInsights()
-        insights = executive_insights.build(dashboard_data, ranking_df)
+        insights = executive_insights.build(dashboard_data, None)
 
         insight_records = []
 
@@ -115,14 +96,12 @@ class ExecutivePipeline:
                 "description": insight["description"]
             })
 
-        if insight_records:
-            self.supabase.insert(
-                "mart_executive_insights",
-                insight_records
-            )
+        self.supabase.insert(
+            "mart_executive_insights",
+            insight_records
+        )
 
         return {
             "executive_snapshot": executive_snapshot,
-            "seller_ranking_count": len(ranking_records),
             "insights_count": len(insight_records)
         }

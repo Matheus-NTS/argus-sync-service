@@ -1,6 +1,6 @@
 class ExecutiveInsights:
 
-    def build(self, dashboard_data, ranking_df):
+    def build(self, dashboard_data, ranking_df=None):
 
         insights = []
 
@@ -44,7 +44,7 @@ class ExecutiveInsights:
                 "description": f"Faltam R$ {gap_hiper:,.2f} para atingir a Hiper Meta."
             })
 
-        if len(ranking_df) > 0:
+        if ranking_df is not None and len(ranking_df) > 0:
             top_seller = ranking_df.iloc[0]
             insights.append({
                 "insight_type": "seller",
