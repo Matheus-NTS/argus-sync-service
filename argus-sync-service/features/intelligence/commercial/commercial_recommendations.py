@@ -1,6 +1,6 @@
 class CommercialRecommendations:
 
-    def build(self, facts, product_abc_df=None, customer_abc_df=None):
+    def build(self, facts, product_abc_df=None, customer_abc_df=None, concentration_records=None):
 
         recommendations = []
 
@@ -9,16 +9,45 @@ class CommercialRecommendations:
             for fact in facts
         }
 
-        concentration = facts_by_type.get("customer_concentration")
+        concentration_records = concentration_records or []
 
-        if concentration and concentration["value"] >= 0.5:
+        customer_top_5 = next(
+            (
+                item for item in concentration_records
+                if item["concentration_type"] == "customer" and item["top_n"] == 5
+            ),
+            None
+        )
+
+        product_top_5 = next(
+            (
+                item for item in concentration_records
+                if item["concentration_type"] == "product" and item["top_n"] == 5
+            ),
+            None
+        )
+
+        if customer_top_5 and customer_top_5["participation"] >= 0.6:
             recommendations.append({
-                "recommendation_type": "customer_risk",
+                "recommendation_type": "customer_concentration",
                 "priority": "high",
-                "title": "Reduzir concentração de clientes",
+                "title": "Reduzir dependência dos principais clientes",
                 "description": (
-                    "Os maiores clientes concentram parte relevante do faturamento. "
-                    "Acompanhe a carteira de clientes Classe A e desenvolva novos compradores para reduzir dependência."
+                    f"Os top 5 clientes representam {customer_top_5['participation']:.2%} "
+                    "do faturamento do mês. Recomenda-se ampliar a base ativa e criar ações "
+                    "para reduzir dependência dos maiores compradores."
+                )
+            })
+
+        if product_top_5 and product_top_5["participation"] >= 0.6:
+            recommendations.append({
+                "recommendation_type": "product_concentration",
+                "priority": "high",
+                "title": "Monitorar concentração em poucos produtos",
+                "description": (
+                    f"Os top 5 produtos representam {product_top_5['participation']:.2%} "
+                    "do faturamento do mês. Garanta disponibilidade, margem e alternativas "
+                    "para reduzir risco de dependência."
                 )
             })
 
@@ -31,7 +60,7 @@ class CommercialRecommendations:
                     "priority": "high",
                     "title": "Proteger clientes Classe A",
                     "description": (
-                        f"{len(class_a_customers)} clientes estão na Classe A e sustentam a maior parte do faturamento. "
+                        f"{len(class_a_customers)} clientes estão na Classe A. "
                         "Priorize relacionamento, disponibilidade e acompanhamento comercial desses clientes."
                     )
                 })

@@ -40,14 +40,11 @@ class CommercialIntelligencePipeline:
         recommendations = CommercialRecommendations().build(
             facts,
             product_abc_df,
-            customer_abc_df
+            customer_abc_df,
+            concentration_records_raw
         )
 
-        # -------------------------
-        # FACTS
-        # -------------------------
         fact_records = []
-
         for fact in facts:
             fact_records.append({
                 "reference_date": filters["reference_date"],
@@ -65,9 +62,6 @@ class CommercialIntelligencePipeline:
             fact_records
         )
 
-        # -------------------------
-        # SUMMARY
-        # -------------------------
         summary_records = [{
             "reference_date": filters["reference_date"],
             "period_type": filters["period_type"],
@@ -80,11 +74,7 @@ class CommercialIntelligencePipeline:
             summary_records
         )
 
-        # -------------------------
-        # RECOMMENDATIONS
-        # -------------------------
         recommendation_records = []
-
         for recommendation in recommendations:
             recommendation_records.append({
                 "reference_date": filters["reference_date"],
@@ -101,11 +91,7 @@ class CommercialIntelligencePipeline:
             recommendation_records
         )
 
-        # -------------------------
-        # PRODUCT ABC
-        # -------------------------
         product_abc_records = []
-
         for _, row in product_abc_df.iterrows():
             product_abc_records.append({
                 "reference_date": filters["reference_date"],
@@ -125,11 +111,7 @@ class CommercialIntelligencePipeline:
             product_abc_records
         )
 
-        # -------------------------
-        # CUSTOMER ABC
-        # -------------------------
         customer_abc_records = []
-
         for _, row in customer_abc_df.iterrows():
             customer_abc_records.append({
                 "reference_date": filters["reference_date"],
@@ -149,11 +131,7 @@ class CommercialIntelligencePipeline:
             customer_abc_records
         )
 
-        # -------------------------
-        # CONCENTRATION
-        # -------------------------
         concentration_records = []
-
         for row in concentration_records_raw:
             concentration_records.append({
                 "reference_date": filters["reference_date"],
