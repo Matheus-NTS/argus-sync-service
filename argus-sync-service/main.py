@@ -45,6 +45,7 @@ def main():
     print(f"  Product Overview: {sales_result['product_overview']}")
     print(f"  Product Scorecards: {sales_result['product_scorecards']}")
     print(f"  Customer Overview: {sales_result['customer_overview']}")
+    print(f"  Customer Scorecards: {sales_result['customer_scorecards']}")
     print(f"  Commercial Status: {sales_result['commercial_status']}")
     print(f"  Product Status: {sales_result['product_status']}")
     print(f"  Customer Status: {sales_result['customer_status']}")
