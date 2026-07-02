@@ -9,6 +9,7 @@ from transformers.pedido_transformer import PedidoTransformer
 from features.intelligence.stock.stock_snapshot import StockSnapshot
 from features.intelligence.stock.stock_overview import StockOverview
 from features.intelligence.stock.stock_scorecards import StockScorecards
+from features.intelligence.stock.stock_risk import StockRisk
 
 
 class StockPipeline:
@@ -38,6 +39,9 @@ class StockPipeline:
         stock_snapshot = StockSnapshot()
         stock_df = stock_snapshot.build(estoque, vendas)
 
+        # -------------------------
+        # SNAPSHOT
+        # -------------------------
         stock_records = []
 
         for _, row in stock_df.iterrows():
@@ -70,6 +74,10 @@ class StockPipeline:
             if pd.isna(empresa):
                 empresa = None
 
+            media_venda_mensal = row.get("media_venda_mensal")
+            if pd.isna(media_venda_mensal):
+                media_venda_mensal = 0
+
             stock_records.append({
                 "reference_date": filters["reference_date"],
                 "period_type": filters["period_type"],
@@ -85,7 +93,7 @@ class StockPipeline:
                 "faturamento_90d": round(float(row["faturamento_90d"]), 2),
                 "ultima_venda": ultima_venda,
                 "dias_sem_venda": None if dias_sem_venda is None else int(dias_sem_venda),
-                "media_venda_mensal": round(float(row["media_venda_mensal"]), 4),
+                "media_venda_mensal": round(float(media_venda_mensal), 4),
                 "cobertura_estoque": None if cobertura is None else round(float(cobertura), 4),
                 "risk_type": row["risk_type"],
                 "status": row["status"]
@@ -97,8 +105,12 @@ class StockPipeline:
             stock_records
         )
 
+        # -------------------------
+        # OVERVIEW
+        # -------------------------
         overview = StockOverview().build(stock_df)
         scorecards = StockScorecards().build(overview)
+        risks = StockRisk().build(stock_df)
 
         overview_records = [{
             "reference_date": filters["reference_date"],
@@ -122,6 +134,9 @@ class StockPipeline:
             overview_records
         )
 
+        # -------------------------
+        # SCORECARDS
+        # -------------------------
         scorecard_records = []
 
         for card in scorecards:
@@ -143,6 +158,53 @@ class StockPipeline:
             scorecard_records
         )
 
+        # -------------------------
+        # RISKS
+        # -------------------------
+        risk_records = []
+
+        for risk in risks:
+
+            ultima_venda = None
+            if pd.notnull(risk.get("ultima_venda")):
+                try:
+                    ultima_venda = pd.to_datetime(risk["ultima_venda"]).date().isoformat()
+                except Exception:
+                    ultima_venda = None
+
+            cobertura = risk.get("cobertura_estoque")
+            if pd.isna(cobertura):
+                cobertura = None
+
+            dias_sem_venda = risk.get("dias_sem_venda")
+            if pd.isna(dias_sem_venda):
+                dias_sem_venda = None
+
+            risk_records.append({
+                "reference_date": filters["reference_date"],
+                "period_type": filters["period_type"],
+                "codigo_produto": risk["codigo_produto"],
+                "produto": risk["produto"],
+                "empresa": risk["empresa"],
+                "curva_abcde": risk["curva_abcde"],
+                "estoque_atual": round(float(risk["estoque_atual"]), 2),
+                "valor_estoque": round(float(risk["valor_estoque"]), 2),
+                "qtd_vendida_90d": round(float(risk["qtd_vendida_90d"]), 2),
+                "faturamento_90d": round(float(risk["faturamento_90d"]), 2),
+                "ultima_venda": ultima_venda,
+                "dias_sem_venda": None if dias_sem_venda is None else int(dias_sem_venda),
+                "cobertura_estoque": None if cobertura is None else round(float(cobertura), 4),
+                "risk_type": risk["risk_type"],
+                "status": risk["status"],
+                "description": risk["description"]
+            })
+
+        self.supabase.replace_snapshot(
+            "mart_stock_risk",
+            filters,
+            risk_records
+        )
+
         status_counts = stock_df["status"].value_counts().to_dict()
 
         return {
@@ -152,5 +214,6 @@ class StockPipeline:
             "stock_healthy": int(status_counts.get("healthy", 0)),
             "stock_overview": len(overview_records),
             "stock_scorecards": len(scorecard_records),
+            "stock_risks": len(risk_records),
             "stock_status": overview["status"]
         }

@@ -65,6 +65,7 @@ def main():
     print(f"  Saudáveis: {stock_result['stock_healthy']}")
     print(f"  Stock Overview: {stock_result['stock_overview']}")
     print(f"  Stock Scorecards: {stock_result['stock_scorecards']}")
+    print(f"  Stock Risks: {stock_result['stock_risks']}")
     print(f"  Stock Status: {stock_result['stock_status']}")
 
     print()
