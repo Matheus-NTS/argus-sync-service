@@ -11,6 +11,7 @@ from features.intelligence.commercial.customer_risk import CustomerRisk
 from features.intelligence.commercial.product_risk import ProductRisk
 from features.intelligence.commercial.commercial_overview import CommercialOverview
 from features.intelligence.commercial.commercial_scorecards import CommercialScorecards
+from features.intelligence.commercial.product_overview import ProductOverview
 
 
 class CommercialIntelligencePipeline:
@@ -74,6 +75,13 @@ class CommercialIntelligencePipeline:
         )
 
         scorecards = CommercialScorecards().build(overview)
+
+        product_overview = ProductOverview().build(
+            product_df=product_df,
+            product_abc_df=product_abc_df,
+            product_risks=product_risks,
+            concentration_records=concentration_records_raw
+        )
 
         # -------------------------
         # FACTS
@@ -312,6 +320,31 @@ class CommercialIntelligencePipeline:
             scorecard_records
         )
 
+        # -------------------------
+        # PRODUCT OVERVIEW
+        # -------------------------
+        product_overview_records = [{
+            "reference_date": filters["reference_date"],
+            "period_type": filters["period_type"],
+            "produtos_ativos": int(product_overview["produtos_ativos"]),
+            "produtos_classe_a": int(product_overview["produtos_classe_a"]),
+            "produtos_classe_b": int(product_overview["produtos_classe_b"]),
+            "produtos_classe_c": int(product_overview["produtos_classe_c"]),
+            "produtos_em_risco": int(product_overview["produtos_em_risco"]),
+            "faturamento_total": round(float(product_overview["faturamento_total"]), 2),
+            "top_produto": product_overview["top_produto"],
+            "top_produto_faturamento": round(float(product_overview["top_produto_faturamento"]), 2),
+            "top_5_produtos_share": round(float(product_overview["top_5_produtos_share"]), 4),
+            "headline": product_overview["headline"],
+            "status": product_overview["status"]
+        }]
+
+        self.supabase.replace_snapshot(
+            "mart_product_overview",
+            filters,
+            product_overview_records
+        )
+
         return {
             "commercial_facts": len(fact_records),
             "commercial_summary": len(summary_records),
@@ -324,5 +357,7 @@ class CommercialIntelligencePipeline:
             "product_risks": len(product_risk_records),
             "commercial_overview": len(overview_records),
             "commercial_scorecards": len(scorecard_records),
-            "commercial_status": overview["status"]
+            "product_overview": len(product_overview_records),
+            "commercial_status": overview["status"],
+            "product_status": product_overview["status"]
         }

@@ -42,7 +42,9 @@ def main():
     print(f"  Product Risks: {sales_result['product_risks']}")
     print(f"  Commercial Overview: {sales_result['commercial_overview']}")
     print(f"  Commercial Scorecards: {sales_result['commercial_scorecards']}")
+    print(f"  Product Overview: {sales_result['product_overview']}")
     print(f"  Commercial Status: {sales_result['commercial_status']}")
+    print(f"  Product Status: {sales_result['product_status']}")
 
     print()
     print("=" * 60)
