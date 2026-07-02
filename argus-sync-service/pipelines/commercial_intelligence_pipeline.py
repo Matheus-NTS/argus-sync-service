@@ -15,6 +15,7 @@ from features.intelligence.commercial.product_overview import ProductOverview
 from features.intelligence.commercial.product_scorecards import ProductScorecards
 from features.intelligence.commercial.customer_overview import CustomerOverview
 from features.intelligence.commercial.customer_scorecards import CustomerScorecards
+from features.intelligence.commercial.category_overview import CategoryOverview
 
 
 class CommercialIntelligencePipeline:
@@ -97,9 +98,8 @@ class CommercialIntelligencePipeline:
 
         customer_scorecards = CustomerScorecards().build(customer_overview)
 
-        # -------------------------
-        # FACTS
-        # -------------------------
+        category_overview = CategoryOverview().build(category_df)
+
         fact_records = []
         for fact in facts:
             fact_records.append({
@@ -112,22 +112,24 @@ class CommercialIntelligencePipeline:
                 "value": round(float(fact["value"]), 4)
             })
 
-        self.supabase.replace_snapshot("mart_commercial_facts", filters, fact_records)
+        self.supabase.replace_snapshot(
+            "mart_commercial_facts",
+            filters,
+            fact_records
+        )
 
-        # -------------------------
-        # SUMMARY
-        # -------------------------
         summary_records = [{
             "reference_date": filters["reference_date"],
             "period_type": filters["period_type"],
             "summary": CommercialSummary().build(facts)
         }]
 
-        self.supabase.replace_snapshot("mart_commercial_summary", filters, summary_records)
+        self.supabase.replace_snapshot(
+            "mart_commercial_summary",
+            filters,
+            summary_records
+        )
 
-        # -------------------------
-        # RECOMMENDATIONS
-        # -------------------------
         recommendation_records = []
         for recommendation in recommendations:
             recommendation_records.append({
@@ -145,9 +147,6 @@ class CommercialIntelligencePipeline:
             recommendation_records
         )
 
-        # -------------------------
-        # ALERTS
-        # -------------------------
         alert_records = []
         for alert in alerts:
             alert_records.append({
@@ -165,9 +164,6 @@ class CommercialIntelligencePipeline:
             alert_records
         )
 
-        # -------------------------
-        # PRODUCT ABC
-        # -------------------------
         product_abc_records = []
         for _, row in product_abc_df.iterrows():
             product_abc_records.append({
@@ -188,9 +184,6 @@ class CommercialIntelligencePipeline:
             product_abc_records
         )
 
-        # -------------------------
-        # CUSTOMER ABC
-        # -------------------------
         customer_abc_records = []
         for _, row in customer_abc_df.iterrows():
             customer_abc_records.append({
@@ -211,9 +204,6 @@ class CommercialIntelligencePipeline:
             customer_abc_records
         )
 
-        # -------------------------
-        # CONCENTRATION
-        # -------------------------
         concentration_records = []
         for row in concentration_records_raw:
             concentration_records.append({
@@ -231,9 +221,6 @@ class CommercialIntelligencePipeline:
             concentration_records
         )
 
-        # -------------------------
-        # CUSTOMER RISK
-        # -------------------------
         customer_risk_records = []
         for risk in customer_risks:
             customer_risk_records.append({
@@ -252,9 +239,6 @@ class CommercialIntelligencePipeline:
             customer_risk_records
         )
 
-        # -------------------------
-        # PRODUCT RISK
-        # -------------------------
         product_risk_records = []
         for risk in product_risks:
             product_risk_records.append({
@@ -273,9 +257,6 @@ class CommercialIntelligencePipeline:
             product_risk_records
         )
 
-        # -------------------------
-        # COMMERCIAL OVERVIEW
-        # -------------------------
         overview_records = [{
             "reference_date": filters["reference_date"],
             "period_type": filters["period_type"],
@@ -303,9 +284,6 @@ class CommercialIntelligencePipeline:
             overview_records
         )
 
-        # -------------------------
-        # COMMERCIAL SCORECARDS
-        # -------------------------
         scorecard_records = []
         for card in scorecards:
             scorecard_records.append({
@@ -326,9 +304,6 @@ class CommercialIntelligencePipeline:
             scorecard_records
         )
 
-        # -------------------------
-        # PRODUCT OVERVIEW
-        # -------------------------
         product_overview_records = [{
             "reference_date": filters["reference_date"],
             "period_type": filters["period_type"],
@@ -351,9 +326,6 @@ class CommercialIntelligencePipeline:
             product_overview_records
         )
 
-        # -------------------------
-        # PRODUCT SCORECARDS
-        # -------------------------
         product_scorecard_records = []
         for card in product_scorecards:
             product_scorecard_records.append({
@@ -374,9 +346,6 @@ class CommercialIntelligencePipeline:
             product_scorecard_records
         )
 
-        # -------------------------
-        # CUSTOMER OVERVIEW
-        # -------------------------
         customer_overview_records = [{
             "reference_date": filters["reference_date"],
             "period_type": filters["period_type"],
@@ -399,9 +368,6 @@ class CommercialIntelligencePipeline:
             customer_overview_records
         )
 
-        # -------------------------
-        # CUSTOMER SCORECARDS
-        # -------------------------
         customer_scorecard_records = []
         for card in customer_scorecards:
             customer_scorecard_records.append({
@@ -422,6 +388,25 @@ class CommercialIntelligencePipeline:
             customer_scorecard_records
         )
 
+        category_overview_records = [{
+            "reference_date": filters["reference_date"],
+            "period_type": filters["period_type"],
+            "categorias_ativas": int(category_overview["categorias_ativas"]),
+            "faturamento_total": round(float(category_overview["faturamento_total"]), 2),
+            "top_categoria": category_overview["top_categoria"],
+            "top_categoria_faturamento": round(float(category_overview["top_categoria_faturamento"]), 2),
+            "produtos_total": int(category_overview["produtos_total"]),
+            "clientes_total": int(category_overview["clientes_total"]),
+            "headline": category_overview["headline"],
+            "status": category_overview["status"]
+        }]
+
+        self.supabase.replace_snapshot(
+            "mart_category_overview",
+            filters,
+            category_overview_records
+        )
+
         return {
             "commercial_facts": len(fact_records),
             "commercial_summary": len(summary_records),
@@ -438,7 +423,9 @@ class CommercialIntelligencePipeline:
             "product_scorecards": len(product_scorecard_records),
             "customer_overview": len(customer_overview_records),
             "customer_scorecards": len(customer_scorecard_records),
+            "category_overview": len(category_overview_records),
             "commercial_status": overview["status"],
             "product_status": product_overview["status"],
-            "customer_status": customer_overview["status"]
+            "customer_status": customer_overview["status"],
+            "category_status": category_overview["status"]
         }
