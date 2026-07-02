@@ -34,18 +34,19 @@ class CustomerOverview:
             if item["concentration_type"] == "customer" and item["top_n"] == 5:
                 top_5_clientes_share = float(item["participation"])
 
-        if clientes_em_risco >= 20 or top_5_clientes_share >= 0.75:
+        if top_5_clientes_share >= 0.80:
             status = "critical"
-        elif clientes_em_risco >= 10 or top_5_clientes_share >= 0.60:
+        elif clientes_em_risco >= 25 or top_5_clientes_share >= 0.65:
             status = "attention"
-        elif clientes_em_risco >= 5:
+        elif clientes_em_risco >= 10:
             status = "monitoring"
         else:
             status = "healthy"
 
         headline = (
             f"A carteira possui {clientes_ativos} clientes ativos no mês. "
-            f"{clientes_classe_a} clientes estão na Classe A e os top 5 clientes "
+            f"{clientes_classe_a} clientes estão na Classe A, "
+            f"{clientes_em_risco} clientes exigem acompanhamento e os top 5 clientes "
             f"representam {top_5_clientes_share:.2%} do faturamento."
         )
 
