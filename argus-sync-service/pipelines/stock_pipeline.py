@@ -7,6 +7,8 @@ from extractors.pedido_extractor import PedidoExtractor
 from transformers.pedido_transformer import PedidoTransformer
 
 from features.intelligence.stock.stock_snapshot import StockSnapshot
+from features.intelligence.stock.stock_overview import StockOverview
+from features.intelligence.stock.stock_scorecards import StockScorecards
 
 
 class StockPipeline:
@@ -95,11 +97,60 @@ class StockPipeline:
             stock_records
         )
 
+        overview = StockOverview().build(stock_df)
+        scorecards = StockScorecards().build(overview)
+
+        overview_records = [{
+            "reference_date": filters["reference_date"],
+            "period_type": filters["period_type"],
+            "sku_total": int(overview["sku_total"]),
+            "sku_criticos": int(overview["sku_criticos"]),
+            "sku_atencao": int(overview["sku_atencao"]),
+            "sku_saudaveis": int(overview["sku_saudaveis"]),
+            "valor_total_estoque": round(float(overview["valor_total_estoque"]), 2),
+            "quantidade_total_estoque": round(float(overview["quantidade_total_estoque"]), 2),
+            "rupturas": int(overview["rupturas"]),
+            "sem_giro": int(overview["sem_giro"]),
+            "excesso": int(overview["excesso"]),
+            "headline": overview["headline"],
+            "status": overview["status"]
+        }]
+
+        self.supabase.replace_snapshot(
+            "mart_stock_overview",
+            filters,
+            overview_records
+        )
+
+        scorecard_records = []
+
+        for card in scorecards:
+            scorecard_records.append({
+                "reference_date": filters["reference_date"],
+                "period_type": filters["period_type"],
+                "card_key": card["card_key"],
+                "label": card["label"],
+                "value_numeric": None if card["value_numeric"] is None else round(float(card["value_numeric"]), 4),
+                "value_text": card["value_text"],
+                "value_type": card["value_type"],
+                "status": card["status"],
+                "sort_order": int(card["sort_order"])
+            })
+
+        self.supabase.replace_snapshot(
+            "mart_stock_scorecards",
+            filters,
+            scorecard_records
+        )
+
         status_counts = stock_df["status"].value_counts().to_dict()
 
         return {
             "stock_products": len(stock_records),
             "stock_critical": int(status_counts.get("critical", 0)),
             "stock_attention": int(status_counts.get("attention", 0)),
-            "stock_healthy": int(status_counts.get("healthy", 0))
+            "stock_healthy": int(status_counts.get("healthy", 0)),
+            "stock_overview": len(overview_records),
+            "stock_scorecards": len(scorecard_records),
+            "stock_status": overview["status"]
         }
