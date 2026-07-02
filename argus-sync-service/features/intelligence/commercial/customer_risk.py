@@ -23,26 +23,36 @@ class CustomerRisk:
 
         for _, row in df.iterrows():
 
-            if row["classe"] == "A" and row["pedidos"] <= 1:
+            if (
+                row["classe"] == "A"
+                and row["pedidos"] == 1
+                and row["faturamento_total"] >= 2000
+            ):
                 risks.append({
                     "codigo_cliente": str(row["codigo_cliente"]),
                     "cliente": row["Cliente"],
                     "risk_type": "high_value_low_frequency",
                     "severity": "high",
                     "description": (
-                        f"Cliente Classe A com alto faturamento, mas apenas {int(row['pedidos'])} pedido(s) no período. "
-                        "Recomenda-se acompanhamento próximo para reduzir risco de dependência pontual."
+                        f"Cliente Classe A com faturamento relevante de "
+                        f"R$ {row['faturamento_total']:,.2f}, mas apenas "
+                        f"{int(row['pedidos'])} pedido no período. "
+                        "Recomenda-se acompanhamento próximo para reduzir risco de compra pontual."
                     )
                 })
 
-            if row["classe"] == "A" and row["mix_produtos"] <= 2:
+            if (
+                row["classe"] == "A"
+                and row["mix_produtos"] == 1
+            ):
                 risks.append({
                     "codigo_cliente": str(row["codigo_cliente"]),
                     "cliente": row["Cliente"],
                     "risk_type": "low_product_mix",
                     "severity": "medium",
                     "description": (
-                        f"Cliente Classe A com mix reduzido de {int(row['mix_produtos'])} produto(s). "
+                        f"Cliente Classe A com mix reduzido de apenas "
+                        f"{int(row['mix_produtos'])} produto. "
                         "Há oportunidade de ampliar o relacionamento com venda cruzada."
                     )
                 })

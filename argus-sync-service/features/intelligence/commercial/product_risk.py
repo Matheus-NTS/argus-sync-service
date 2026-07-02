@@ -23,26 +23,36 @@ class ProductRisk:
 
         for _, row in df.iterrows():
 
-            if row["classe"] == "A" and row["pedidos"] <= 1:
+            if (
+                row["classe"] == "A"
+                and row["pedidos"] == 1
+                and row["faturamento_total"] >= 1500
+            ):
                 risks.append({
                     "prod_codigo": str(row["prod_codigo"]),
                     "produto": row["produto"],
                     "risk_type": "high_value_low_frequency",
                     "severity": "high",
                     "description": (
-                        f"Produto Classe A com alto faturamento, mas apenas {int(row['pedidos'])} pedido(s) no período. "
+                        f"Produto Classe A com faturamento relevante de "
+                        f"R$ {row['faturamento_total']:,.2f}, mas apenas "
+                        f"{int(row['pedidos'])} pedido no período. "
                         "Recomenda-se acompanhar recorrência e dependência de vendas pontuais."
                     )
                 })
 
-            if row["classe"] == "A" and row["clientes"] <= 2:
+            if (
+                row["classe"] == "A"
+                and row["clientes"] == 1
+            ):
                 risks.append({
                     "prod_codigo": str(row["prod_codigo"]),
                     "produto": row["produto"],
                     "risk_type": "low_customer_base",
                     "severity": "medium",
                     "description": (
-                        f"Produto Classe A vendido para apenas {int(row['clientes'])} cliente(s). "
+                        f"Produto Classe A vendido para apenas "
+                        f"{int(row['clientes'])} cliente. "
                         "Há risco de dependência e oportunidade de ampliar a base compradora."
                     )
                 })

@@ -40,6 +40,9 @@ def main():
     print(f"  Commercial Concentration: {sales_result['commercial_concentration']}")
     print(f"  Customer Risks: {sales_result['customer_risks']}")
     print(f"  Product Risks: {sales_result['product_risks']}")
+    print(f"  Commercial Overview: {sales_result['commercial_overview']}")
+    print(f"  Commercial Scorecards: {sales_result['commercial_scorecards']}")
+    print(f"  Commercial Status: {sales_result['commercial_status']}")
 
     print()
     print("=" * 60)
