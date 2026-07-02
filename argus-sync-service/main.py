@@ -39,6 +39,7 @@ def main():
     print(f"  ABC Clientes: {sales_result['abc_customers']}")
     print(f"  Commercial Concentration: {sales_result['commercial_concentration']}")
     print(f"  Customer Risks: {sales_result['customer_risks']}")
+    print(f"  Product Risks: {sales_result['product_risks']}")
 
     print()
     print("=" * 60)
