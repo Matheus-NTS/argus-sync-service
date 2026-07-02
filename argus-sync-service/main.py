@@ -34,6 +34,7 @@ def main():
     print(f"  Commercial Facts: {sales_result['commercial_facts']}")
     print(f"  Commercial Summary: {sales_result['commercial_summary']}")
     print(f"  Commercial Recommendations: {sales_result['commercial_recommendations']}")
+    print(f"  Commercial Alerts: {sales_result['commercial_alerts']}")
     print(f"  ABC Produtos: {sales_result['abc_products']}")
     print(f"  ABC Clientes: {sales_result['abc_customers']}")
     print(f"  Commercial Concentration: {sales_result['commercial_concentration']}")

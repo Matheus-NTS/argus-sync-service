@@ -3,6 +3,7 @@ from datetime import datetime
 from features.intelligence.commercial.commercial_facts import CommercialFacts
 from features.intelligence.commercial.commercial_summary import CommercialSummary
 from features.intelligence.commercial.commercial_recommendations import CommercialRecommendations
+from features.intelligence.commercial.commercial_alerts import CommercialAlerts
 from features.intelligence.commercial.abc_analysis import ABCAnalysis
 from features.intelligence.commercial.customer_abc_analysis import CustomerABCAnalysis
 from features.intelligence.commercial.concentration_analysis import ConcentrationAnalysis
@@ -44,6 +45,11 @@ class CommercialIntelligencePipeline:
             concentration_records_raw
         )
 
+        alerts = CommercialAlerts().build(concentration_records_raw)
+
+        # -------------------------
+        # FACTS
+        # -------------------------
         fact_records = []
         for fact in facts:
             fact_records.append({
@@ -62,6 +68,9 @@ class CommercialIntelligencePipeline:
             fact_records
         )
 
+        # -------------------------
+        # SUMMARY
+        # -------------------------
         summary_records = [{
             "reference_date": filters["reference_date"],
             "period_type": filters["period_type"],
@@ -74,6 +83,9 @@ class CommercialIntelligencePipeline:
             summary_records
         )
 
+        # -------------------------
+        # RECOMMENDATIONS
+        # -------------------------
         recommendation_records = []
         for recommendation in recommendations:
             recommendation_records.append({
@@ -91,6 +103,29 @@ class CommercialIntelligencePipeline:
             recommendation_records
         )
 
+        # -------------------------
+        # ALERTS
+        # -------------------------
+        alert_records = []
+        for alert in alerts:
+            alert_records.append({
+                "reference_date": filters["reference_date"],
+                "period_type": filters["period_type"],
+                "alert_type": alert["alert_type"],
+                "severity": alert["severity"],
+                "title": alert["title"],
+                "description": alert["description"]
+            })
+
+        self.supabase.replace_snapshot(
+            "mart_commercial_alerts",
+            filters,
+            alert_records
+        )
+
+        # -------------------------
+        # PRODUCT ABC
+        # -------------------------
         product_abc_records = []
         for _, row in product_abc_df.iterrows():
             product_abc_records.append({
@@ -111,6 +146,9 @@ class CommercialIntelligencePipeline:
             product_abc_records
         )
 
+        # -------------------------
+        # CUSTOMER ABC
+        # -------------------------
         customer_abc_records = []
         for _, row in customer_abc_df.iterrows():
             customer_abc_records.append({
@@ -131,6 +169,9 @@ class CommercialIntelligencePipeline:
             customer_abc_records
         )
 
+        # -------------------------
+        # CONCENTRATION
+        # -------------------------
         concentration_records = []
         for row in concentration_records_raw:
             concentration_records.append({
@@ -152,6 +193,7 @@ class CommercialIntelligencePipeline:
             "commercial_facts": len(fact_records),
             "commercial_summary": len(summary_records),
             "commercial_recommendations": len(recommendation_records),
+            "commercial_alerts": len(alert_records),
             "abc_products": len(product_abc_records),
             "abc_customers": len(customer_abc_records),
             "commercial_concentration": len(concentration_records)
