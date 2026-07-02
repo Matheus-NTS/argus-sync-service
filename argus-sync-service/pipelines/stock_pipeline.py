@@ -10,6 +10,7 @@ from features.intelligence.stock.stock_snapshot import StockSnapshot
 from features.intelligence.stock.stock_overview import StockOverview
 from features.intelligence.stock.stock_scorecards import StockScorecards
 from features.intelligence.stock.stock_risk import StockRisk
+from features.intelligence.stock.stock_company import StockCompany
 
 
 class StockPipeline:
@@ -106,11 +107,12 @@ class StockPipeline:
         )
 
         # -------------------------
-        # OVERVIEW
+        # OVERVIEW / SCORECARDS / RISKS / COMPANY
         # -------------------------
         overview = StockOverview().build(stock_df)
         scorecards = StockScorecards().build(overview)
         risks = StockRisk().build(stock_df)
+        company_snapshot = StockCompany().build(stock_df)
 
         overview_records = [{
             "reference_date": filters["reference_date"],
@@ -205,6 +207,34 @@ class StockPipeline:
             risk_records
         )
 
+        # -------------------------
+        # COMPANY SNAPSHOT
+        # -------------------------
+        company_records = []
+
+        for item in company_snapshot:
+            company_records.append({
+                "reference_date": filters["reference_date"],
+                "period_type": filters["period_type"],
+                "empresa": item["empresa"],
+                "sku_total": int(item["sku_total"]),
+                "sku_criticos": int(item["sku_criticos"]),
+                "sku_atencao": int(item["sku_atencao"]),
+                "sku_saudaveis": int(item["sku_saudaveis"]),
+                "quantidade_total_estoque": round(float(item["quantidade_total_estoque"]), 2),
+                "valor_total_estoque": round(float(item["valor_total_estoque"]), 2),
+                "rupturas": int(item["rupturas"]),
+                "sem_giro": int(item["sem_giro"]),
+                "excesso": int(item["excesso"]),
+                "status": item["status"]
+            })
+
+        self.supabase.replace_snapshot(
+            "mart_stock_company_snapshot",
+            filters,
+            company_records
+        )
+
         status_counts = stock_df["status"].value_counts().to_dict()
 
         return {
@@ -215,5 +245,6 @@ class StockPipeline:
             "stock_overview": len(overview_records),
             "stock_scorecards": len(scorecard_records),
             "stock_risks": len(risk_records),
+            "stock_company": len(company_records),
             "stock_status": overview["status"]
         }
