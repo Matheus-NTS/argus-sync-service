@@ -7,6 +7,7 @@ from features.intelligence.commercial.commercial_alerts import CommercialAlerts
 from features.intelligence.commercial.abc_analysis import ABCAnalysis
 from features.intelligence.commercial.customer_abc_analysis import CustomerABCAnalysis
 from features.intelligence.commercial.concentration_analysis import ConcentrationAnalysis
+from features.intelligence.commercial.customer_risk import CustomerRisk
 
 
 class CommercialIntelligencePipeline:
@@ -47,9 +48,11 @@ class CommercialIntelligencePipeline:
 
         alerts = CommercialAlerts().build(concentration_records_raw)
 
-        # -------------------------
-        # FACTS
-        # -------------------------
+        customer_risks = CustomerRisk().build(
+            customer_df,
+            customer_abc_df
+        )
+
         fact_records = []
         for fact in facts:
             fact_records.append({
@@ -68,9 +71,6 @@ class CommercialIntelligencePipeline:
             fact_records
         )
 
-        # -------------------------
-        # SUMMARY
-        # -------------------------
         summary_records = [{
             "reference_date": filters["reference_date"],
             "period_type": filters["period_type"],
@@ -83,9 +83,6 @@ class CommercialIntelligencePipeline:
             summary_records
         )
 
-        # -------------------------
-        # RECOMMENDATIONS
-        # -------------------------
         recommendation_records = []
         for recommendation in recommendations:
             recommendation_records.append({
@@ -103,9 +100,6 @@ class CommercialIntelligencePipeline:
             recommendation_records
         )
 
-        # -------------------------
-        # ALERTS
-        # -------------------------
         alert_records = []
         for alert in alerts:
             alert_records.append({
@@ -123,9 +117,6 @@ class CommercialIntelligencePipeline:
             alert_records
         )
 
-        # -------------------------
-        # PRODUCT ABC
-        # -------------------------
         product_abc_records = []
         for _, row in product_abc_df.iterrows():
             product_abc_records.append({
@@ -146,9 +137,6 @@ class CommercialIntelligencePipeline:
             product_abc_records
         )
 
-        # -------------------------
-        # CUSTOMER ABC
-        # -------------------------
         customer_abc_records = []
         for _, row in customer_abc_df.iterrows():
             customer_abc_records.append({
@@ -169,9 +157,6 @@ class CommercialIntelligencePipeline:
             customer_abc_records
         )
 
-        # -------------------------
-        # CONCENTRATION
-        # -------------------------
         concentration_records = []
         for row in concentration_records_raw:
             concentration_records.append({
@@ -189,6 +174,24 @@ class CommercialIntelligencePipeline:
             concentration_records
         )
 
+        customer_risk_records = []
+        for risk in customer_risks:
+            customer_risk_records.append({
+                "reference_date": filters["reference_date"],
+                "period_type": filters["period_type"],
+                "codigo_cliente": risk["codigo_cliente"],
+                "cliente": risk["cliente"],
+                "risk_type": risk["risk_type"],
+                "severity": risk["severity"],
+                "description": risk["description"]
+            })
+
+        self.supabase.replace_snapshot(
+            "mart_commercial_customer_risk",
+            filters,
+            customer_risk_records
+        )
+
         return {
             "commercial_facts": len(fact_records),
             "commercial_summary": len(summary_records),
@@ -196,5 +199,6 @@ class CommercialIntelligencePipeline:
             "commercial_alerts": len(alert_records),
             "abc_products": len(product_abc_records),
             "abc_customers": len(customer_abc_records),
-            "commercial_concentration": len(concentration_records)
+            "commercial_concentration": len(concentration_records),
+            "customer_risks": len(customer_risk_records)
         }
