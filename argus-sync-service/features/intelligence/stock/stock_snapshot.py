@@ -5,6 +5,48 @@ import pandas as pd
 
 class StockSnapshot:
 
+    def normalize_company(self, value):
+
+        if pd.isna(value):
+            return None
+
+        raw = str(value).strip().upper()
+
+        raw = (
+            raw
+            .replace("Ã", "A")
+            .replace("Á", "A")
+            .replace("À", "A")
+            .replace("Â", "A")
+            .replace("É", "E")
+            .replace("Ê", "E")
+            .replace("Í", "I")
+            .replace("Ó", "O")
+            .replace("Ô", "O")
+            .replace("Ú", "U")
+            .replace("Ç", "C")
+        )
+
+        raw = " ".join(raw.split())
+
+        mapping = {
+            "NTS RIO": "NTS RIO DE JANEIRO",
+            "NTS RIO DE JANEIRO": "NTS RIO DE JANEIRO",
+            "NTS RIO JANEIRO": "NTS RIO DE JANEIRO",
+            "RIO": "NTS RIO DE JANEIRO",
+
+            "NTS SAO PAULO": "NTS SAO PAULO",
+            "NTS SP": "NTS SAO PAULO",
+            "SAO PAULO": "NTS SAO PAULO",
+            "SP": "NTS SAO PAULO",
+
+            "NTS BELEM": "NTS BELEM",
+            "NTS BELÉM": "NTS BELEM",
+            "BELEM": "NTS BELEM",
+        }
+
+        return mapping.get(raw, raw)
+
     def build(self, estoque_df, vendas_df):
 
         hoje = datetime.today().date()
@@ -14,6 +56,9 @@ class StockSnapshot:
 
         estoque["codigo_produto"] = estoque["Codigo_Supra"].astype(str).str.strip()
         vendas["codigo_produto"] = vendas["prod_codigo"].astype(str).str.strip()
+
+        estoque["empresa_key"] = estoque["Empresa"].apply(self.normalize_company)
+        vendas["empresa_key"] = vendas["Empresa"].apply(self.normalize_company)
 
         estoque["Quantidade_Estoque"] = pd.to_numeric(
             estoque["Quantidade_Estoque"],
@@ -48,7 +93,7 @@ class StockSnapshot:
 
         vendas_30_agg = (
             vendas_30
-            .groupby(["codigo_produto", "Empresa"])
+            .groupby(["codigo_produto", "empresa_key"], dropna=False)
             .agg(
                 qtd_vendida_30d=("Quantidade", "sum"),
                 faturamento_30d=("Valor_total_Unitario", "sum")
@@ -58,7 +103,7 @@ class StockSnapshot:
 
         vendas_90_agg = (
             vendas_90
-            .groupby(["codigo_produto", "Empresa"])
+            .groupby(["codigo_produto", "empresa_key"], dropna=False)
             .agg(
                 qtd_vendida_90d=("Quantidade", "sum"),
                 faturamento_90d=("Valor_total_Unitario", "sum"),
@@ -69,15 +114,13 @@ class StockSnapshot:
 
         base = estoque.merge(
             vendas_30_agg,
-            left_on=["codigo_produto", "Empresa"],
-            right_on=["codigo_produto", "Empresa"],
+            on=["codigo_produto", "empresa_key"],
             how="left"
         )
 
         base = base.merge(
             vendas_90_agg,
-            left_on=["codigo_produto", "Empresa"],
-            right_on=["codigo_produto", "Empresa"],
+            on=["codigo_produto", "empresa_key"],
             how="left"
         )
 
