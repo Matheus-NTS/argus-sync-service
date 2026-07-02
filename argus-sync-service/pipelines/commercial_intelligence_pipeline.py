@@ -5,6 +5,7 @@ from features.intelligence.commercial.commercial_summary import CommercialSummar
 from features.intelligence.commercial.commercial_recommendations import CommercialRecommendations
 from features.intelligence.commercial.abc_analysis import ABCAnalysis
 from features.intelligence.commercial.customer_abc_analysis import CustomerABCAnalysis
+from features.intelligence.commercial.concentration_analysis import ConcentrationAnalysis
 
 
 class CommercialIntelligencePipeline:
@@ -15,6 +16,10 @@ class CommercialIntelligencePipeline:
     def run(self, ranking_df, company_df, product_df, customer_df, category_df):
 
         hoje = datetime.today()
+        filters = {
+            "reference_date": hoje.date().isoformat(),
+            "period_type": "current_month"
+        }
 
         facts = CommercialFacts().build(
             ranking_df,
@@ -27,18 +32,26 @@ class CommercialIntelligencePipeline:
         product_abc_df = ABCAnalysis().build(product_df)
         customer_abc_df = CustomerABCAnalysis().build(customer_df)
 
+        concentration_records_raw = ConcentrationAnalysis().build(
+            customer_df,
+            product_df
+        )
+
         recommendations = CommercialRecommendations().build(
             facts,
             product_abc_df,
             customer_abc_df
         )
 
+        # -------------------------
+        # FACTS
+        # -------------------------
         fact_records = []
 
         for fact in facts:
             fact_records.append({
-                "reference_date": hoje.date().isoformat(),
-                "period_type": "current_month",
+                "reference_date": filters["reference_date"],
+                "period_type": filters["period_type"],
                 "fact_type": fact["fact_type"],
                 "severity": fact["severity"],
                 "title": fact["title"],
@@ -48,28 +61,34 @@ class CommercialIntelligencePipeline:
 
         self.supabase.replace_snapshot(
             "mart_commercial_facts",
-            {"reference_date": hoje.date().isoformat(), "period_type": "current_month"},
+            filters,
             fact_records
         )
 
+        # -------------------------
+        # SUMMARY
+        # -------------------------
         summary_records = [{
-            "reference_date": hoje.date().isoformat(),
-            "period_type": "current_month",
+            "reference_date": filters["reference_date"],
+            "period_type": filters["period_type"],
             "summary": CommercialSummary().build(facts)
         }]
 
         self.supabase.replace_snapshot(
             "mart_commercial_summary",
-            {"reference_date": hoje.date().isoformat(), "period_type": "current_month"},
+            filters,
             summary_records
         )
 
+        # -------------------------
+        # RECOMMENDATIONS
+        # -------------------------
         recommendation_records = []
 
         for recommendation in recommendations:
             recommendation_records.append({
-                "reference_date": hoje.date().isoformat(),
-                "period_type": "current_month",
+                "reference_date": filters["reference_date"],
+                "period_type": filters["period_type"],
                 "recommendation_type": recommendation["recommendation_type"],
                 "priority": recommendation["priority"],
                 "title": recommendation["title"],
@@ -78,16 +97,19 @@ class CommercialIntelligencePipeline:
 
         self.supabase.replace_snapshot(
             "mart_commercial_recommendations",
-            {"reference_date": hoje.date().isoformat(), "period_type": "current_month"},
+            filters,
             recommendation_records
         )
 
+        # -------------------------
+        # PRODUCT ABC
+        # -------------------------
         product_abc_records = []
 
         for _, row in product_abc_df.iterrows():
             product_abc_records.append({
-                "reference_date": hoje.date().isoformat(),
-                "period_type": "current_month",
+                "reference_date": filters["reference_date"],
+                "period_type": filters["period_type"],
                 "prod_codigo": row["prod_codigo"],
                 "produto": row["produto"],
                 "faturamento_total": round(float(row["faturamento_total"]), 2),
@@ -99,16 +121,19 @@ class CommercialIntelligencePipeline:
 
         self.supabase.replace_snapshot(
             "mart_sales_product_abc_snapshot",
-            {"reference_date": hoje.date().isoformat(), "period_type": "current_month"},
+            filters,
             product_abc_records
         )
 
+        # -------------------------
+        # CUSTOMER ABC
+        # -------------------------
         customer_abc_records = []
 
         for _, row in customer_abc_df.iterrows():
             customer_abc_records.append({
-                "reference_date": hoje.date().isoformat(),
-                "period_type": "current_month",
+                "reference_date": filters["reference_date"],
+                "period_type": filters["period_type"],
                 "codigo_cliente": str(row["codigo_cliente"]),
                 "cliente": row["Cliente"],
                 "faturamento_total": round(float(row["faturamento_total"]), 2),
@@ -120,8 +145,29 @@ class CommercialIntelligencePipeline:
 
         self.supabase.replace_snapshot(
             "mart_sales_customer_abc_snapshot",
-            {"reference_date": hoje.date().isoformat(), "period_type": "current_month"},
+            filters,
             customer_abc_records
+        )
+
+        # -------------------------
+        # CONCENTRATION
+        # -------------------------
+        concentration_records = []
+
+        for row in concentration_records_raw:
+            concentration_records.append({
+                "reference_date": filters["reference_date"],
+                "period_type": filters["period_type"],
+                "concentration_type": row["concentration_type"],
+                "top_n": int(row["top_n"]),
+                "participation": round(float(row["participation"]), 4),
+                "description": row["description"]
+            })
+
+        self.supabase.replace_snapshot(
+            "mart_commercial_concentration_snapshot",
+            filters,
+            concentration_records
         )
 
         return {
@@ -129,5 +175,6 @@ class CommercialIntelligencePipeline:
             "commercial_summary": len(summary_records),
             "commercial_recommendations": len(recommendation_records),
             "abc_products": len(product_abc_records),
-            "abc_customers": len(customer_abc_records)
+            "abc_customers": len(customer_abc_records),
+            "commercial_concentration": len(concentration_records)
         }
