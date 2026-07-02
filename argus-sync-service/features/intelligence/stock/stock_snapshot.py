@@ -20,8 +20,8 @@ class StockSnapshot:
             errors="coerce"
         ).fillna(0)
 
-        estoque["preco_custo_real"] = pd.to_numeric(
-            estoque["preco_custo_real"],
+        estoque["preco_custo"] = pd.to_numeric(
+            estoque["preco_custo"],
             errors="coerce"
         ).fillna(0)
 
@@ -87,7 +87,7 @@ class StockSnapshot:
         base["faturamento_90d"] = base["faturamento_90d"].fillna(0)
 
         base["valor_estoque"] = (
-            base["Quantidade_Estoque"] * base["preco_custo_real"]
+            base["Quantidade_Estoque"] * base["preco_custo"]
         )
 
         base["media_venda_mensal"] = base["qtd_vendida_90d"] / 3
