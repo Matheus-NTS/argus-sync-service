@@ -3,6 +3,7 @@ from connectors.supabase_connector import SupabaseConnector
 
 from pipelines.executive_pipeline import ExecutivePipeline
 from pipelines.sales_pipeline import SalesPipeline
+from pipelines.stock_pipeline import StockPipeline
 
 
 def main():
@@ -19,6 +20,9 @@ def main():
 
     sales = SalesPipeline(sql_connector, supabase_connector)
     sales_result = sales.run()
+
+    stock = StockPipeline(sql_connector, supabase_connector)
+    stock_result = stock.run()
 
     print()
     print("✓ Executive Pipeline finalizada")
@@ -47,10 +51,18 @@ def main():
     print(f"  Customer Overview: {sales_result['customer_overview']}")
     print(f"  Customer Scorecards: {sales_result['customer_scorecards']}")
     print(f"  Category Overview: {sales_result['category_overview']}")
+    print(f"  Category Scorecards: {sales_result['category_scorecards']}")
     print(f"  Commercial Status: {sales_result['commercial_status']}")
     print(f"  Product Status: {sales_result['product_status']}")
     print(f"  Customer Status: {sales_result['customer_status']}")
     print(f"  Category Status: {sales_result['category_status']}")
+
+    print()
+    print("✓ Stock Pipeline finalizada")
+    print(f"  Produtos em estoque analisados: {stock_result['stock_products']}")
+    print(f"  Críticos: {stock_result['stock_critical']}")
+    print(f"  Atenção: {stock_result['stock_attention']}")
+    print(f"  Saudáveis: {stock_result['stock_healthy']}")
 
     print()
     print("=" * 60)

@@ -34,18 +34,19 @@ class ProductOverview:
             if item["concentration_type"] == "product" and item["top_n"] == 5:
                 top_5_produtos_share = float(item["participation"])
 
-        if produtos_em_risco >= 20 or top_5_produtos_share >= 0.75:
+        if top_5_produtos_share >= 0.80:
             status = "critical"
-        elif produtos_em_risco >= 10 or top_5_produtos_share >= 0.60:
+        elif produtos_em_risco >= 30 or top_5_produtos_share >= 0.65:
             status = "attention"
-        elif produtos_em_risco >= 5:
+        elif produtos_em_risco >= 12:
             status = "monitoring"
         else:
             status = "healthy"
 
         headline = (
             f"O portfólio teve {produtos_ativos} produtos ativos no mês. "
-            f"{produtos_classe_a} produtos estão na Classe A e os top 5 produtos "
+            f"{produtos_classe_a} produtos estão na Classe A, "
+            f"{produtos_em_risco} produtos exigem acompanhamento e os top 5 produtos "
             f"representam {top_5_produtos_share:.2%} do faturamento."
         )
 
