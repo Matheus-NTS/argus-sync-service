@@ -1,5 +1,7 @@
 from datetime import datetime
 
+import pandas as pd
+
 from features.sales.seller_ranking import SellerRanking
 from features.sales.company_performance import CompanyPerformance
 from features.sales.product_performance import ProductPerformance
@@ -12,21 +14,39 @@ class SalesMartPipeline:
     def __init__(self, supabase_connector):
         self.supabase = supabase_connector
 
-    def run(self, pedidos_mes):
+    def run(self, pedidos, period_type="current_month"):
 
         hoje = datetime.today()
+
         filters = {
             "reference_date": hoje.date().isoformat(),
-            "period_type": "current_month"
+            "period_type": period_type
         }
 
-        seller_df = SellerRanking().build(pedidos_mes)
-        company_df = CompanyPerformance().build(pedidos_mes)
-        product_df = ProductPerformance().build(pedidos_mes)
-        customer_df = CustomerPerformance().build(pedidos_mes)
-        category_df = CategoryPerformance().build(pedidos_mes)
+        seller_df = SellerRanking().build(pedidos)
+        company_df = CompanyPerformance().build(pedidos)
+        product_df = ProductPerformance().build(pedidos)
+        customer_df = CustomerPerformance().build(pedidos)
+        category_df = CategoryPerformance().build(pedidos)
+
+        self._save_sellers(seller_df, filters)
+        self._save_companies(company_df, filters)
+        self._save_products(product_df, filters)
+        self._save_customers(customer_df, filters)
+        self._save_categories(category_df, filters)
+
+        return {
+            "seller_df": seller_df,
+            "company_df": company_df,
+            "product_df": product_df,
+            "customer_df": customer_df,
+            "category_df": category_df
+        }
+
+    def _save_sellers(self, seller_df, filters):
 
         seller_records = []
+
         for _, row in seller_df.iterrows():
             seller_records.append({
                 "reference_date": filters["reference_date"],
@@ -47,7 +67,10 @@ class SalesMartPipeline:
             seller_records
         )
 
+    def _save_companies(self, company_df, filters):
+
         company_records = []
+
         for _, row in company_df.iterrows():
             company_records.append({
                 "reference_date": filters["reference_date"],
@@ -66,7 +89,10 @@ class SalesMartPipeline:
             company_records
         )
 
+    def _save_products(self, product_df, filters):
+
         product_records = []
+
         for _, row in product_df.iterrows():
             product_records.append({
                 "reference_date": filters["reference_date"],
@@ -88,8 +114,20 @@ class SalesMartPipeline:
             product_records
         )
 
+    def _save_customers(self, customer_df, filters):
+
         customer_records = []
+
         for _, row in customer_df.iterrows():
+
+            ultima_compra = None
+
+            if pd.notnull(row["ultima_compra"]):
+                try:
+                    ultima_compra = pd.to_datetime(row["ultima_compra"]).date().isoformat()
+                except Exception:
+                    ultima_compra = None
+
             customer_records.append({
                 "reference_date": filters["reference_date"],
                 "period_type": filters["period_type"],
@@ -100,7 +138,7 @@ class SalesMartPipeline:
                 "itens_vendidos": int(row["itens_vendidos"]),
                 "mix_produtos": int(row["mix_produtos"]),
                 "ticket_medio": round(float(row["ticket_medio"]), 2),
-                "ultima_compra": row["ultima_compra"].date().isoformat()
+                "ultima_compra": ultima_compra
             })
 
         self.supabase.replace_snapshot(
@@ -109,7 +147,10 @@ class SalesMartPipeline:
             customer_records
         )
 
+    def _save_categories(self, category_df, filters):
+
         category_records = []
+
         for _, row in category_df.iterrows():
             category_records.append({
                 "reference_date": filters["reference_date"],
@@ -128,11 +169,3 @@ class SalesMartPipeline:
             filters,
             category_records
         )
-
-        return {
-            "seller_df": seller_df,
-            "company_df": company_df,
-            "product_df": product_df,
-            "customer_df": customer_df,
-            "category_df": category_df
-        }

@@ -30,6 +30,7 @@ def main():
 
     print()
     print("✓ Sales Pipeline finalizada")
+    print(f"  Períodos gerados: {sales_result['periods_generated']}")
     print(f"  Ranking: {sales_result['seller_ranking']} vendedores")
     print(f"  Empresas: {sales_result['companies']}")
     print(f"  Produtos: {sales_result['products']}")
