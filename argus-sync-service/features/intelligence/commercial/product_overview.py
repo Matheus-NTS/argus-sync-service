@@ -6,20 +6,34 @@ class ProductOverview:
 
         faturamento_total = (
             float(product_df["faturamento_total"].sum())
-            if produtos_ativos > 0
+            if produtos_ativos > 0 and "faturamento_total" in product_df.columns
             else 0
         )
 
-        produtos_classe_a = len(product_abc_df[product_abc_df["classe"] == "A"])
-        produtos_classe_b = len(product_abc_df[product_abc_df["classe"] == "B"])
-        produtos_classe_c = len(product_abc_df[product_abc_df["classe"] == "C"])
+        produtos_classe_a = (
+            len(product_abc_df[product_abc_df["classe"] == "A"])
+            if "classe" in product_abc_df.columns
+            else 0
+        )
+
+        produtos_classe_b = (
+            len(product_abc_df[product_abc_df["classe"] == "B"])
+            if "classe" in product_abc_df.columns
+            else 0
+        )
+
+        produtos_classe_c = (
+            len(product_abc_df[product_abc_df["classe"] == "C"])
+            if "classe" in product_abc_df.columns
+            else 0
+        )
 
         produtos_em_risco = len(product_risks)
 
         top_produto = None
         top_produto_faturamento = 0
 
-        if produtos_ativos > 0:
+        if produtos_ativos > 0 and "faturamento_total" in product_df.columns:
             top_row = product_df.sort_values(
                 by="faturamento_total",
                 ascending=False
@@ -34,21 +48,35 @@ class ProductOverview:
             if item["concentration_type"] == "product" and item["top_n"] == 5:
                 top_5_produtos_share = float(item["participation"])
 
-        if top_5_produtos_share >= 0.80:
+        if produtos_ativos == 0:
+            status = "healthy"
+            headline = "Não houve produtos vendidos neste período."
+        elif top_5_produtos_share >= 0.80:
             status = "critical"
+            headline = (
+                f"O portfólio teve {produtos_ativos} produtos ativos no período. "
+                f"Os top 5 produtos representam {top_5_produtos_share:.2%} do faturamento."
+            )
         elif produtos_em_risco >= 30 or top_5_produtos_share >= 0.65:
             status = "attention"
+            headline = (
+                f"O portfólio teve {produtos_ativos} produtos ativos no período. "
+                f"{produtos_classe_a} produtos estão na Classe A, "
+                f"{produtos_em_risco} produtos exigem acompanhamento e os top 5 produtos "
+                f"representam {top_5_produtos_share:.2%} do faturamento."
+            )
         elif produtos_em_risco >= 12:
             status = "monitoring"
+            headline = (
+                f"O portfólio teve {produtos_ativos} produtos ativos no período. "
+                f"{produtos_em_risco} produtos exigem monitoramento."
+            )
         else:
             status = "healthy"
-
-        headline = (
-            f"O portfólio teve {produtos_ativos} produtos ativos no mês. "
-            f"{produtos_classe_a} produtos estão na Classe A, "
-            f"{produtos_em_risco} produtos exigem acompanhamento e os top 5 produtos "
-            f"representam {top_5_produtos_share:.2%} do faturamento."
-        )
+            headline = (
+                f"O portfólio teve {produtos_ativos} produtos ativos no período. "
+                f"{produtos_classe_a} produtos estão na Classe A."
+            )
 
         return {
             "produtos_ativos": produtos_ativos,

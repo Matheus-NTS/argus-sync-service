@@ -6,7 +6,7 @@ class CategoryOverview:
 
         faturamento_total = (
             float(category_df["faturamento_total"].sum())
-            if categorias_ativas > 0
+            if categorias_ativas > 0 and "faturamento_total" in category_df.columns
             else 0
         )
 
@@ -15,17 +15,17 @@ class CategoryOverview:
 
         produtos_total = (
             int(category_df["produtos"].sum())
-            if categorias_ativas > 0
+            if categorias_ativas > 0 and "produtos" in category_df.columns
             else 0
         )
 
         clientes_total = (
             int(category_df["clientes"].sum())
-            if categorias_ativas > 0
+            if categorias_ativas > 0 and "clientes" in category_df.columns
             else 0
         )
 
-        if categorias_ativas > 0:
+        if categorias_ativas > 0 and "faturamento_total" in category_df.columns:
             top_row = category_df.sort_values(
                 by="faturamento_total",
                 ascending=False
@@ -34,16 +34,23 @@ class CategoryOverview:
             top_categoria = top_row["Categoria"]
             top_categoria_faturamento = float(top_row["faturamento_total"])
 
-        if categorias_ativas <= 3:
+        if categorias_ativas == 0:
+            status = "healthy"
+            headline = "Não houve categorias com venda neste período."
+        elif categorias_ativas <= 3:
             status = "attention"
+            headline = (
+                f"O mix comercial teve apenas {categorias_ativas} categorias ativas no período. "
+                f"A principal categoria foi {top_categoria}, com "
+                f"R$ {top_categoria_faturamento:,.2f} em faturamento."
+            )
         else:
             status = "healthy"
-
-        headline = (
-            f"O mix comercial possui {categorias_ativas} categorias ativas no mês. "
-            f"A principal categoria é {top_categoria}, com "
-            f"R$ {top_categoria_faturamento:,.2f} em faturamento."
-        )
+            headline = (
+                f"O mix comercial teve {categorias_ativas} categorias ativas no período. "
+                f"A principal categoria foi {top_categoria}, com "
+                f"R$ {top_categoria_faturamento:,.2f} em faturamento."
+            )
 
         return {
             "categorias_ativas": categorias_ativas,

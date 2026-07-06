@@ -24,13 +24,13 @@ class CommercialIntelligencePipeline:
     def __init__(self, supabase_connector):
         self.supabase = supabase_connector
 
-    def run(self, ranking_df, company_df, product_df, customer_df, category_df):
+    def run(self, ranking_df, company_df, product_df, customer_df, category_df, period_type="current_month"):
 
         hoje = datetime.today()
         filters = {
-            "reference_date": hoje.date().isoformat(),
-            "period_type": "current_month"
-        }
+    "reference_date": hoje.date().isoformat(),
+    "period_type": period_type
+}
 
         facts = CommercialFacts().build(
             ranking_df,
