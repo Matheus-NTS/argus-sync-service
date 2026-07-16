@@ -10,18 +10,24 @@ class CustomerRisk:
         if customer_abc_df is None or len(customer_abc_df) == 0:
             return risks
 
-        abc_lookup = customer_abc_df[[
-            "codigo_cliente",
-            "classe"
-        ]].copy()
+        lookup_cols = ["codigo_cliente", "classe"]
+        merge_cols = ["codigo_cliente"]
+
+        if "Empresa" in customer_df.columns and "Empresa" in customer_abc_df.columns:
+            lookup_cols = ["Empresa", "codigo_cliente", "classe"]
+            merge_cols = ["Empresa", "codigo_cliente"]
+
+        abc_lookup = customer_abc_df[lookup_cols].copy()
 
         df = customer_df.merge(
             abc_lookup,
-            on="codigo_cliente",
+            on=merge_cols,
             how="left"
         )
 
         for _, row in df.iterrows():
+
+            empresa = row["Empresa"] if "Empresa" in row else "TOTAL"
 
             if (
                 row["classe"] == "A"
@@ -29,6 +35,7 @@ class CustomerRisk:
                 and row["faturamento_total"] >= 2000
             ):
                 risks.append({
+                    "empresa": empresa,
                     "codigo_cliente": str(row["codigo_cliente"]),
                     "cliente": row["Cliente"],
                     "risk_type": "high_value_low_frequency",
@@ -46,6 +53,7 @@ class CustomerRisk:
                 and row["mix_produtos"] == 1
             ):
                 risks.append({
+                    "empresa": empresa,
                     "codigo_cliente": str(row["codigo_cliente"]),
                     "cliente": row["Cliente"],
                     "risk_type": "low_product_mix",

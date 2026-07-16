@@ -8,6 +8,7 @@ from transformers.pedido_transformer import PedidoTransformer
 
 from pipelines.sales_mart_pipeline import SalesMartPipeline
 from pipelines.commercial_intelligence_pipeline import CommercialIntelligencePipeline
+from pipelines.sales_history_pipeline import SalesHistoryPipeline
 
 
 class SalesPipeline:
@@ -20,36 +21,40 @@ class SalesPipeline:
 
         hoje = datetime.today().date()
 
-        pedido_extractor = PedidoExtractor(self.sql_connector)
-        pedidos = pedido_extractor.extract()
+        pedidos = PedidoExtractor(self.sql_connector).extract()
+        pedidos = PedidoTransformer().filter_revenue_orders(pedidos)
 
-        pedido_transformer = PedidoTransformer()
-        pedidos = pedido_transformer.filter_revenue_orders(pedidos)
-
-        pedidos["Data"] = pd.to_datetime(
-            pedidos["Data"],
-            errors="coerce"
-        )
+        pedidos["Data"] = pd.to_datetime(pedidos["Data"], errors="coerce")
+        pedidos = pedidos[pedidos["Data"].notna()].copy()
 
         sales_marts = SalesMartPipeline(self.supabase)
         intelligence = CommercialIntelligencePipeline(self.supabase)
+        history_result = SalesHistoryPipeline(self.supabase).run(pedidos)
 
         current_month_result = None
         current_month_intelligence = None
         period_results = {}
 
-        for period_type in MVP_PERIODS:
+        periods_to_generate = ["historico"] + list(MVP_PERIODS)
 
-            window = resolve_window(period_type, hoje)
+        for period_type in periods_to_generate:
 
-            pedidos_periodo = pedidos[
-                (pedidos["Data"].dt.date >= window.date_from) &
-                (pedidos["Data"].dt.date <= window.date_to)
-            ].copy()
+            if period_type == "historico":
+                pedidos_periodo = pedidos.copy()
+                date_from = pedidos_periodo["Data"].min().date()
+                date_to = pedidos_periodo["Data"].max().date()
+            else:
+                window = resolve_window(period_type, hoje)
+                pedidos_periodo = pedidos[
+                    (pedidos["Data"].dt.date >= window.date_from) &
+                    (pedidos["Data"].dt.date <= window.date_to)
+                ].copy()
+                date_from = window.date_from
+                date_to = window.date_to
 
             print(
                 f"  Gerando marts de vendas: {period_type} "
-                f"({window.date_from} até {window.date_to}) "
+                f"({date_from} até {date_to}) "
                 f"- {len(pedidos_periodo)} registros"
             )
 
@@ -61,9 +66,9 @@ class SalesPipeline:
             intelligence_result = intelligence.run(
                 mart_result["seller_df"],
                 mart_result["company_df"],
-                mart_result["product_df"],
-                mart_result["customer_df"],
-                mart_result["category_df"],
+                mart_result["product_df_all"],
+                mart_result["customer_df_all"],
+                mart_result["category_df_all"],
                 period_type=period_type
             )
 
@@ -90,5 +95,6 @@ class SalesPipeline:
             "customers": len(current_month_result["customer_df"]),
             "categories": len(current_month_result["category_df"]),
             "periods_generated": len(period_results),
+            **history_result,
             **current_month_intelligence
         }

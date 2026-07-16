@@ -13,6 +13,16 @@ class SupabaseConnector:
         self.url = os.getenv("SUPABASE_URL")
         self.key = os.getenv("SUPABASE_SECRET_KEY")
 
+        if not self.url:
+            raise ValueError(
+                "SUPABASE_URL não foi configurada."
+            )
+
+        if not self.key:
+            raise ValueError(
+                "SUPABASE_SECRET_KEY não foi configurada."
+            )
+
         self.client = create_client(
             self.url,
             self.key
@@ -27,7 +37,43 @@ class SupabaseConnector:
             .execute()
         )
 
-    def upsert(self, table_name, data, conflict_columns):
+    def insert_batches(
+        self,
+        table_name,
+        data,
+        batch_size=500
+    ):
+
+        if not data:
+            return []
+
+        responses = []
+
+        for start in range(
+            0,
+            len(data),
+            batch_size
+        ):
+
+            batch = data[
+                start:start + batch_size
+            ]
+
+            response = self.insert(
+                table_name,
+                batch
+            )
+
+            responses.append(response)
+
+        return responses
+
+    def upsert(
+        self,
+        table_name,
+        data,
+        conflict_columns
+    ):
 
         return (
             self.client
@@ -39,16 +85,47 @@ class SupabaseConnector:
             .execute()
         )
 
-    def delete_where(self, table_name, filters):
+    def delete_where(
+        self,
+        table_name,
+        filters
+    ):
 
-        query = self.client.table(table_name).delete()
+        if not filters:
+            raise ValueError(
+                "delete_where exige ao menos um filtro."
+            )
+
+        query = (
+            self.client
+            .table(table_name)
+            .delete()
+        )
 
         for column, value in filters.items():
-            query = query.eq(column, value)
+            query = query.eq(
+                column,
+                value
+            )
 
         return query.execute()
 
-    def replace_snapshot(self, table_name, filters, data):
+    def delete_all(self, table_name):
+
+        return (
+            self.client
+            .table(table_name)
+            .delete()
+            .gte("id", 0)
+            .execute()
+        )
+
+    def replace_snapshot(
+        self,
+        table_name,
+        filters,
+        data
+    ):
 
         self.delete_where(
             table_name,
@@ -61,4 +138,26 @@ class SupabaseConnector:
         return self.insert(
             table_name,
             data
+        )
+
+    def replace_snapshot_batches(
+        self,
+        table_name,
+        filters,
+        data,
+        batch_size=500
+    ):
+
+        self.delete_where(
+            table_name,
+            filters
+        )
+
+        if not data:
+            return []
+
+        return self.insert_batches(
+            table_name=table_name,
+            data=data,
+            batch_size=batch_size
         )

@@ -28,83 +28,255 @@ class CommercialIntelligencePipeline:
 
         hoje = datetime.today()
         filters = {
-    "reference_date": hoje.date().isoformat(),
-    "period_type": period_type
-}
+            "reference_date": hoje.date().isoformat(),
+            "period_type": period_type
+        }
+
+        product_total_df = self._filter_empresa(product_df, "TOTAL")
+        customer_total_df = self._filter_empresa(customer_df, "TOTAL")
+        category_total_df = self._filter_empresa(category_df, "TOTAL")
 
         facts = CommercialFacts().build(
             ranking_df,
             company_df,
-            product_df,
-            customer_df,
-            category_df
+            product_total_df,
+            customer_total_df,
+            category_total_df
         )
 
-        product_abc_df = ABCAnalysis().build(product_df)
-        customer_abc_df = CustomerABCAnalysis().build(customer_df)
+        product_abc_total_df = ABCAnalysis().build(product_total_df)
+        customer_abc_total_df = CustomerABCAnalysis().build(customer_total_df)
 
-        concentration_records_raw = ConcentrationAnalysis().build(
-            customer_df,
-            product_df
+        concentration_total = ConcentrationAnalysis().build(
+            customer_total_df,
+            product_total_df
         )
 
         recommendations = CommercialRecommendations().build(
             facts,
-            product_abc_df,
-            customer_abc_df,
-            concentration_records_raw
+            product_abc_total_df,
+            customer_abc_total_df,
+            concentration_total
         )
 
-        alerts = CommercialAlerts().build(concentration_records_raw)
+        alerts = CommercialAlerts().build(concentration_total)
 
-        customer_risks = CustomerRisk().build(
-            customer_df,
-            customer_abc_df
+        customer_risks_total = CustomerRisk().build(
+            customer_total_df,
+            customer_abc_total_df
         )
 
-        product_risks = ProductRisk().build(
-            product_df,
-            product_abc_df
+        product_risks_total = ProductRisk().build(
+            product_total_df,
+            product_abc_total_df
         )
 
         overview = CommercialOverview().build(
             ranking_df=ranking_df,
-            product_df=product_df,
-            customer_df=customer_df,
-            category_df=category_df,
-            concentration_records=concentration_records_raw,
+            product_df=product_total_df,
+            customer_df=customer_total_df,
+            category_df=category_total_df,
+            concentration_records=concentration_total,
             alerts=alerts,
-            customer_risks=customer_risks,
-            product_risks=product_risks,
+            customer_risks=customer_risks_total,
+            product_risks=product_risks_total,
             recommendations=recommendations
         )
 
         scorecards = CommercialScorecards().build(overview)
 
-        product_overview = ProductOverview().build(
-            product_df=product_df,
-            product_abc_df=product_abc_df,
-            product_risks=product_risks,
-            concentration_records=concentration_records_raw
-        )
+        empresas = self._empresas(product_df, customer_df, category_df)
 
-        product_scorecards = ProductScorecards().build(product_overview)
+        product_abc_records = []
+        customer_abc_records = []
+        product_risk_records = []
+        customer_risk_records = []
+        product_overview_records = []
+        product_scorecard_records = []
+        customer_overview_records = []
+        customer_scorecard_records = []
+        category_overview_records = []
+        category_scorecard_records = []
 
-        customer_overview = CustomerOverview().build(
-            customer_df=customer_df,
-            customer_abc_df=customer_abc_df,
-            customer_risks=customer_risks,
-            concentration_records=concentration_records_raw
-        )
+        for empresa in empresas:
+            product_emp_df = self._filter_empresa(product_df, empresa)
+            customer_emp_df = self._filter_empresa(customer_df, empresa)
+            category_emp_df = self._filter_empresa(category_df, empresa)
 
-        customer_scorecards = CustomerScorecards().build(customer_overview)
+            product_abc_df = ABCAnalysis().build(product_emp_df)
+            customer_abc_df = CustomerABCAnalysis().build(customer_emp_df)
 
-        category_overview = CategoryOverview().build(category_df)
-        category_scorecards = CategoryScorecards().build(category_overview)
+            concentration_records = ConcentrationAnalysis().build(
+                customer_emp_df,
+                product_emp_df
+            )
 
-        # -------------------------
-        # COMMERCIAL FACTS
-        # -------------------------
+            product_risks = ProductRisk().build(product_emp_df, product_abc_df)
+            customer_risks = CustomerRisk().build(customer_emp_df, customer_abc_df)
+
+            product_overview = ProductOverview().build(
+                product_df=product_emp_df,
+                product_abc_df=product_abc_df,
+                product_risks=product_risks,
+                concentration_records=concentration_records
+            )
+
+            product_scorecards = ProductScorecards().build(product_overview)
+
+            customer_overview = CustomerOverview().build(
+                customer_df=customer_emp_df,
+                customer_abc_df=customer_abc_df,
+                customer_risks=customer_risks,
+                concentration_records=concentration_records
+            )
+
+            customer_scorecards = CustomerScorecards().build(customer_overview)
+
+            category_overview = CategoryOverview().build(category_emp_df)
+            category_scorecards = CategoryScorecards().build(category_overview)
+
+            for _, row in product_abc_df.iterrows():
+                product_abc_records.append({
+                    "reference_date": filters["reference_date"],
+                    "period_type": filters["period_type"],
+                    "empresa": empresa,
+                    "prod_codigo": row["prod_codigo"],
+                    "produto": row["produto"],
+                    "faturamento_total": round(float(row["faturamento_total"]), 2),
+                    "percentual": round(float(row["percentual"]), 4),
+                    "percentual_acumulado": round(float(row["percentual_acumulado"]), 4),
+                    "classe": row["classe"],
+                    "ranking": int(row["ranking"])
+                })
+
+            for _, row in customer_abc_df.iterrows():
+                customer_abc_records.append({
+                    "reference_date": filters["reference_date"],
+                    "period_type": filters["period_type"],
+                    "empresa": empresa,
+                    "codigo_cliente": str(row["codigo_cliente"]),
+                    "cliente": row["Cliente"],
+                    "faturamento_total": round(float(row["faturamento_total"]), 2),
+                    "percentual": round(float(row["percentual"]), 4),
+                    "percentual_acumulado": round(float(row["percentual_acumulado"]), 4),
+                    "classe": row["classe"],
+                    "ranking": int(row["ranking"])
+                })
+
+            for risk in product_risks:
+                product_risk_records.append({
+                    "reference_date": filters["reference_date"],
+                    "period_type": filters["period_type"],
+                    "empresa": empresa,
+                    "prod_codigo": risk["prod_codigo"],
+                    "produto": risk["produto"],
+                    "risk_type": risk["risk_type"],
+                    "severity": risk["severity"],
+                    "description": risk["description"]
+                })
+
+            for risk in customer_risks:
+                customer_risk_records.append({
+                    "reference_date": filters["reference_date"],
+                    "period_type": filters["period_type"],
+                    "empresa": empresa,
+                    "codigo_cliente": risk["codigo_cliente"],
+                    "cliente": risk["cliente"],
+                    "risk_type": risk["risk_type"],
+                    "severity": risk["severity"],
+                    "description": risk["description"]
+                })
+
+            product_overview_records.append({
+                "reference_date": filters["reference_date"],
+                "period_type": filters["period_type"],
+                "empresa": empresa,
+                "produtos_ativos": int(product_overview["produtos_ativos"]),
+                "produtos_classe_a": int(product_overview["produtos_classe_a"]),
+                "produtos_classe_b": int(product_overview["produtos_classe_b"]),
+                "produtos_classe_c": int(product_overview["produtos_classe_c"]),
+                "produtos_em_risco": int(product_overview["produtos_em_risco"]),
+                "faturamento_total": round(float(product_overview["faturamento_total"]), 2),
+                "top_produto": product_overview["top_produto"],
+                "top_produto_faturamento": round(float(product_overview["top_produto_faturamento"]), 2),
+                "top_5_produtos_share": round(float(product_overview["top_5_produtos_share"]), 4),
+                "headline": product_overview["headline"],
+                "status": product_overview["status"]
+            })
+
+            for card in product_scorecards:
+                product_scorecard_records.append({
+                    "reference_date": filters["reference_date"],
+                    "period_type": filters["period_type"],
+                    "empresa": empresa,
+                    "card_key": card["card_key"],
+                    "label": card["label"],
+                    "value_numeric": None if card["value_numeric"] is None else round(float(card["value_numeric"]), 4),
+                    "value_text": card["value_text"],
+                    "value_type": card["value_type"],
+                    "status": card["status"],
+                    "sort_order": int(card["sort_order"])
+                })
+
+            customer_overview_records.append({
+                "reference_date": filters["reference_date"],
+                "period_type": filters["period_type"],
+                "empresa": empresa,
+                "clientes_ativos": int(customer_overview["clientes_ativos"]),
+                "clientes_classe_a": int(customer_overview["clientes_classe_a"]),
+                "clientes_classe_b": int(customer_overview["clientes_classe_b"]),
+                "clientes_classe_c": int(customer_overview["clientes_classe_c"]),
+                "clientes_em_risco": int(customer_overview["clientes_em_risco"]),
+                "faturamento_total": round(float(customer_overview["faturamento_total"]), 2),
+                "top_cliente": customer_overview["top_cliente"],
+                "top_cliente_faturamento": round(float(customer_overview["top_cliente_faturamento"]), 2),
+                "top_5_clientes_share": round(float(customer_overview["top_5_clientes_share"]), 4),
+                "headline": customer_overview["headline"],
+                "status": customer_overview["status"]
+            })
+
+            for card in customer_scorecards:
+                customer_scorecard_records.append({
+                    "reference_date": filters["reference_date"],
+                    "period_type": filters["period_type"],
+                    "empresa": empresa,
+                    "card_key": card["card_key"],
+                    "label": card["label"],
+                    "value_numeric": None if card["value_numeric"] is None else round(float(card["value_numeric"]), 4),
+                    "value_text": card["value_text"],
+                    "value_type": card["value_type"],
+                    "status": card["status"],
+                    "sort_order": int(card["sort_order"])
+                })
+
+            category_overview_records.append({
+                "reference_date": filters["reference_date"],
+                "period_type": filters["period_type"],
+                "empresa": empresa,
+                "categorias_ativas": int(category_overview["categorias_ativas"]),
+                "faturamento_total": round(float(category_overview["faturamento_total"]), 2),
+                "top_categoria": category_overview["top_categoria"],
+                "top_categoria_faturamento": round(float(category_overview["top_categoria_faturamento"]), 2),
+                "produtos_total": int(category_overview["produtos_total"]),
+                "clientes_total": int(category_overview["clientes_total"]),
+                "headline": category_overview["headline"],
+                "status": category_overview["status"]
+            })
+
+            for card in category_scorecards:
+                category_scorecard_records.append({
+                    "reference_date": filters["reference_date"],
+                    "period_type": filters["period_type"],
+                    "empresa": empresa,
+                    "card_key": card["card_key"],
+                    "label": card["label"],
+                    "value_numeric": None if card["value_numeric"] is None else round(float(card["value_numeric"]), 4),
+                    "value_text": card["value_text"],
+                    "value_type": card["value_type"],
+                    "status": card["status"],
+                    "sort_order": int(card["sort_order"])
+                })
+
         fact_records = []
         for fact in facts:
             fact_records.append({
@@ -117,30 +289,16 @@ class CommercialIntelligencePipeline:
                 "value": round(float(fact["value"]), 4)
             })
 
-        self.supabase.replace_snapshot(
-            "mart_commercial_facts",
-            filters,
-            fact_records
-        )
+        self.supabase.replace_snapshot("mart_commercial_facts", filters, fact_records)
 
-        # -------------------------
-        # COMMERCIAL SUMMARY
-        # -------------------------
         summary_records = [{
             "reference_date": filters["reference_date"],
             "period_type": filters["period_type"],
             "summary": CommercialSummary().build(facts)
         }]
 
-        self.supabase.replace_snapshot(
-            "mart_commercial_summary",
-            filters,
-            summary_records
-        )
+        self.supabase.replace_snapshot("mart_commercial_summary", filters, summary_records)
 
-        # -------------------------
-        # COMMERCIAL RECOMMENDATIONS
-        # -------------------------
         recommendation_records = []
         for recommendation in recommendations:
             recommendation_records.append({
@@ -152,15 +310,8 @@ class CommercialIntelligencePipeline:
                 "description": recommendation["description"]
             })
 
-        self.supabase.replace_snapshot(
-            "mart_commercial_recommendations",
-            filters,
-            recommendation_records
-        )
+        self.supabase.replace_snapshot("mart_commercial_recommendations", filters, recommendation_records)
 
-        # -------------------------
-        # COMMERCIAL ALERTS
-        # -------------------------
         alert_records = []
         for alert in alerts:
             alert_records.append({
@@ -172,63 +323,10 @@ class CommercialIntelligencePipeline:
                 "description": alert["description"]
             })
 
-        self.supabase.replace_snapshot(
-            "mart_commercial_alerts",
-            filters,
-            alert_records
-        )
+        self.supabase.replace_snapshot("mart_commercial_alerts", filters, alert_records)
 
-        # -------------------------
-        # PRODUCT ABC
-        # -------------------------
-        product_abc_records = []
-        for _, row in product_abc_df.iterrows():
-            product_abc_records.append({
-                "reference_date": filters["reference_date"],
-                "period_type": filters["period_type"],
-                "prod_codigo": row["prod_codigo"],
-                "produto": row["produto"],
-                "faturamento_total": round(float(row["faturamento_total"]), 2),
-                "percentual": round(float(row["percentual"]), 4),
-                "percentual_acumulado": round(float(row["percentual_acumulado"]), 4),
-                "classe": row["classe"],
-                "ranking": int(row["ranking"])
-            })
-
-        self.supabase.replace_snapshot(
-            "mart_sales_product_abc_snapshot",
-            filters,
-            product_abc_records
-        )
-
-        # -------------------------
-        # CUSTOMER ABC
-        # -------------------------
-        customer_abc_records = []
-        for _, row in customer_abc_df.iterrows():
-            customer_abc_records.append({
-                "reference_date": filters["reference_date"],
-                "period_type": filters["period_type"],
-                "codigo_cliente": str(row["codigo_cliente"]),
-                "cliente": row["Cliente"],
-                "faturamento_total": round(float(row["faturamento_total"]), 2),
-                "percentual": round(float(row["percentual"]), 4),
-                "percentual_acumulado": round(float(row["percentual_acumulado"]), 4),
-                "classe": row["classe"],
-                "ranking": int(row["ranking"])
-            })
-
-        self.supabase.replace_snapshot(
-            "mart_sales_customer_abc_snapshot",
-            filters,
-            customer_abc_records
-        )
-
-        # -------------------------
-        # CONCENTRATION
-        # -------------------------
         concentration_records = []
-        for row in concentration_records_raw:
+        for row in concentration_total:
             concentration_records.append({
                 "reference_date": filters["reference_date"],
                 "period_type": filters["period_type"],
@@ -238,57 +336,8 @@ class CommercialIntelligencePipeline:
                 "description": row["description"]
             })
 
-        self.supabase.replace_snapshot(
-            "mart_commercial_concentration_snapshot",
-            filters,
-            concentration_records
-        )
+        self.supabase.replace_snapshot("mart_commercial_concentration_snapshot", filters, concentration_records)
 
-        # -------------------------
-        # CUSTOMER RISK
-        # -------------------------
-        customer_risk_records = []
-        for risk in customer_risks:
-            customer_risk_records.append({
-                "reference_date": filters["reference_date"],
-                "period_type": filters["period_type"],
-                "codigo_cliente": risk["codigo_cliente"],
-                "cliente": risk["cliente"],
-                "risk_type": risk["risk_type"],
-                "severity": risk["severity"],
-                "description": risk["description"]
-            })
-
-        self.supabase.replace_snapshot(
-            "mart_commercial_customer_risk",
-            filters,
-            customer_risk_records
-        )
-
-        # -------------------------
-        # PRODUCT RISK
-        # -------------------------
-        product_risk_records = []
-        for risk in product_risks:
-            product_risk_records.append({
-                "reference_date": filters["reference_date"],
-                "period_type": filters["period_type"],
-                "prod_codigo": risk["prod_codigo"],
-                "produto": risk["produto"],
-                "risk_type": risk["risk_type"],
-                "severity": risk["severity"],
-                "description": risk["description"]
-            })
-
-        self.supabase.replace_snapshot(
-            "mart_commercial_product_risk",
-            filters,
-            product_risk_records
-        )
-
-        # -------------------------
-        # COMMERCIAL OVERVIEW
-        # -------------------------
         overview_records = [{
             "reference_date": filters["reference_date"],
             "period_type": filters["period_type"],
@@ -310,15 +359,8 @@ class CommercialIntelligencePipeline:
             "status": overview["status"]
         }]
 
-        self.supabase.replace_snapshot(
-            "mart_commercial_overview",
-            filters,
-            overview_records
-        )
+        self.supabase.replace_snapshot("mart_commercial_overview", filters, overview_records)
 
-        # -------------------------
-        # COMMERCIAL SCORECARDS
-        # -------------------------
         scorecard_records = []
         for card in scorecards:
             scorecard_records.append({
@@ -333,152 +375,18 @@ class CommercialIntelligencePipeline:
                 "sort_order": int(card["sort_order"])
             })
 
-        self.supabase.replace_snapshot(
-            "mart_commercial_scorecards",
-            filters,
-            scorecard_records
-        )
+        self.supabase.replace_snapshot("mart_commercial_scorecards", filters, scorecard_records)
 
-        # -------------------------
-        # PRODUCT OVERVIEW
-        # -------------------------
-        product_overview_records = [{
-            "reference_date": filters["reference_date"],
-            "period_type": filters["period_type"],
-            "produtos_ativos": int(product_overview["produtos_ativos"]),
-            "produtos_classe_a": int(product_overview["produtos_classe_a"]),
-            "produtos_classe_b": int(product_overview["produtos_classe_b"]),
-            "produtos_classe_c": int(product_overview["produtos_classe_c"]),
-            "produtos_em_risco": int(product_overview["produtos_em_risco"]),
-            "faturamento_total": round(float(product_overview["faturamento_total"]), 2),
-            "top_produto": product_overview["top_produto"],
-            "top_produto_faturamento": round(float(product_overview["top_produto_faturamento"]), 2),
-            "top_5_produtos_share": round(float(product_overview["top_5_produtos_share"]), 4),
-            "headline": product_overview["headline"],
-            "status": product_overview["status"]
-        }]
-
-        self.supabase.replace_snapshot(
-            "mart_product_overview",
-            filters,
-            product_overview_records
-        )
-
-        # -------------------------
-        # PRODUCT SCORECARDS
-        # -------------------------
-        product_scorecard_records = []
-        for card in product_scorecards:
-            product_scorecard_records.append({
-                "reference_date": filters["reference_date"],
-                "period_type": filters["period_type"],
-                "card_key": card["card_key"],
-                "label": card["label"],
-                "value_numeric": None if card["value_numeric"] is None else round(float(card["value_numeric"]), 4),
-                "value_text": card["value_text"],
-                "value_type": card["value_type"],
-                "status": card["status"],
-                "sort_order": int(card["sort_order"])
-            })
-
-        self.supabase.replace_snapshot(
-            "mart_product_scorecards",
-            filters,
-            product_scorecard_records
-        )
-
-        # -------------------------
-        # CUSTOMER OVERVIEW
-        # -------------------------
-        customer_overview_records = [{
-            "reference_date": filters["reference_date"],
-            "period_type": filters["period_type"],
-            "clientes_ativos": int(customer_overview["clientes_ativos"]),
-            "clientes_classe_a": int(customer_overview["clientes_classe_a"]),
-            "clientes_classe_b": int(customer_overview["clientes_classe_b"]),
-            "clientes_classe_c": int(customer_overview["clientes_classe_c"]),
-            "clientes_em_risco": int(customer_overview["clientes_em_risco"]),
-            "faturamento_total": round(float(customer_overview["faturamento_total"]), 2),
-            "top_cliente": customer_overview["top_cliente"],
-            "top_cliente_faturamento": round(float(customer_overview["top_cliente_faturamento"]), 2),
-            "top_5_clientes_share": round(float(customer_overview["top_5_clientes_share"]), 4),
-            "headline": customer_overview["headline"],
-            "status": customer_overview["status"]
-        }]
-
-        self.supabase.replace_snapshot(
-            "mart_customer_overview",
-            filters,
-            customer_overview_records
-        )
-
-        # -------------------------
-        # CUSTOMER SCORECARDS
-        # -------------------------
-        customer_scorecard_records = []
-        for card in customer_scorecards:
-            customer_scorecard_records.append({
-                "reference_date": filters["reference_date"],
-                "period_type": filters["period_type"],
-                "card_key": card["card_key"],
-                "label": card["label"],
-                "value_numeric": None if card["value_numeric"] is None else round(float(card["value_numeric"]), 4),
-                "value_text": card["value_text"],
-                "value_type": card["value_type"],
-                "status": card["status"],
-                "sort_order": int(card["sort_order"])
-            })
-
-        self.supabase.replace_snapshot(
-            "mart_customer_scorecards",
-            filters,
-            customer_scorecard_records
-        )
-
-        # -------------------------
-        # CATEGORY OVERVIEW
-        # -------------------------
-        category_overview_records = [{
-            "reference_date": filters["reference_date"],
-            "period_type": filters["period_type"],
-            "categorias_ativas": int(category_overview["categorias_ativas"]),
-            "faturamento_total": round(float(category_overview["faturamento_total"]), 2),
-            "top_categoria": category_overview["top_categoria"],
-            "top_categoria_faturamento": round(float(category_overview["top_categoria_faturamento"]), 2),
-            "produtos_total": int(category_overview["produtos_total"]),
-            "clientes_total": int(category_overview["clientes_total"]),
-            "headline": category_overview["headline"],
-            "status": category_overview["status"]
-        }]
-
-        self.supabase.replace_snapshot(
-            "mart_category_overview",
-            filters,
-            category_overview_records
-        )
-
-        # -------------------------
-        # CATEGORY SCORECARDS
-        # -------------------------
-        category_scorecard_records = []
-        for card in category_scorecards:
-            category_scorecard_records.append({
-                "reference_date": filters["reference_date"],
-                "period_type": filters["period_type"],
-                "card_key": card["card_key"],
-                "label": card["label"],
-                "value_numeric": None if card["value_numeric"] is None else round(float(card["value_numeric"]), 4),
-                "value_text": card["value_text"],
-                "value_type": card["value_type"],
-                "status": card["status"],
-                "sort_order": int(card["sort_order"])
-            })
-
-        self.supabase.replace_snapshot(
-            "mart_category_scorecards",
-            filters,
-            category_scorecard_records
-        )
+        self.supabase.replace_snapshot("mart_sales_product_abc_snapshot", filters, product_abc_records)
+        self.supabase.replace_snapshot("mart_sales_customer_abc_snapshot", filters, customer_abc_records)
+        self.supabase.replace_snapshot("mart_commercial_product_risk", filters, product_risk_records)
+        self.supabase.replace_snapshot("mart_commercial_customer_risk", filters, customer_risk_records)
+        self.supabase.replace_snapshot("mart_product_overview", filters, product_overview_records)
+        self.supabase.replace_snapshot("mart_product_scorecards", filters, product_scorecard_records)
+        self.supabase.replace_snapshot("mart_customer_overview", filters, customer_overview_records)
+        self.supabase.replace_snapshot("mart_customer_scorecards", filters, customer_scorecard_records)
+        self.supabase.replace_snapshot("mart_category_overview", filters, category_overview_records)
+        self.supabase.replace_snapshot("mart_category_scorecards", filters, category_scorecard_records)
 
         return {
             "commercial_facts": len(fact_records),
@@ -499,7 +407,25 @@ class CommercialIntelligencePipeline:
             "category_overview": len(category_overview_records),
             "category_scorecards": len(category_scorecard_records),
             "commercial_status": overview["status"],
-            "product_status": product_overview["status"],
-            "customer_status": customer_overview["status"],
-            "category_status": category_overview["status"]
+            "product_status": overview["status"],
+            "customer_status": overview["status"],
+            "category_status": "healthy"
         }
+
+    def _empresas(self, product_df, customer_df, category_df):
+        empresas = set(["TOTAL"])
+
+        for df in [product_df, customer_df, category_df]:
+            if df is not None and "Empresa" in df.columns:
+                empresas.update(df["Empresa"].dropna().unique().tolist())
+
+        return sorted(empresas)
+
+    def _filter_empresa(self, df, empresa):
+        if df is None:
+            return df
+
+        if "Empresa" not in df.columns:
+            return df
+
+        return df[df["Empresa"] == empresa].copy()

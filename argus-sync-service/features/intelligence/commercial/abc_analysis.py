@@ -4,6 +4,9 @@ class ABCAnalysis:
 
         df = product_df.copy()
 
+        if df is None or len(df) == 0:
+            return df
+
         df = df.sort_values(
             by="faturamento_total",
             ascending=False
@@ -12,6 +15,10 @@ class ABCAnalysis:
         total = df["faturamento_total"].sum()
 
         if total <= 0:
+            df["percentual"] = 0
+            df["percentual_acumulado"] = 0
+            df["ranking"] = range(1, len(df) + 1)
+            df["classe"] = "C"
             return df
 
         df["percentual"] = df["faturamento_total"] / total

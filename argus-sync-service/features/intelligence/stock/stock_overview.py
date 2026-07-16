@@ -2,14 +2,15 @@ class StockOverview:
 
     def build(self, stock_df):
 
-        sku_total = len(stock_df)
+        sku_total = stock_df["codigo_produto"].astype(str).nunique()
+        posicoes_estoque = len(stock_df)
 
         sku_criticos = len(stock_df[stock_df["status"] == "critical"])
         sku_atencao = len(stock_df[stock_df["status"] == "attention"])
         sku_saudaveis = len(stock_df[stock_df["status"] == "healthy"])
 
-        valor_total_estoque = float(stock_df["valor_estoque"].sum()) if sku_total > 0 else 0
-        quantidade_total_estoque = float(stock_df["Quantidade_Estoque"].sum()) if sku_total > 0 else 0
+        valor_total_estoque = float(stock_df["valor_estoque"].sum()) if posicoes_estoque > 0 else 0
+        quantidade_total_estoque = float(stock_df["Quantidade_Estoque"].sum()) if posicoes_estoque > 0 else 0
 
         rupturas = len(stock_df[stock_df["risk_type"] == "ruptura"])
         sem_giro = len(stock_df[stock_df["risk_type"] == "sem_giro"])
@@ -25,13 +26,14 @@ class StockOverview:
             status = "healthy"
 
         headline = (
-            f"O estoque possui {sku_total} produtos analisados, "
+            f"O estoque possui {sku_total} produtos únicos analisados, "
             f"com {sku_criticos} itens críticos, {sku_atencao} em atenção "
             f"e valor total estimado de R$ {valor_total_estoque:,.2f}."
         )
 
         return {
             "sku_total": sku_total,
+            "posicoes_estoque": posicoes_estoque,
             "sku_criticos": sku_criticos,
             "sku_atencao": sku_atencao,
             "sku_saudaveis": sku_saudaveis,

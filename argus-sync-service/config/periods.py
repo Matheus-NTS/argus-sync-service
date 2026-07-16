@@ -20,6 +20,7 @@ MVP_PERIODS = [
     "last_7_days",
     "last_30_days",
     "ytd",
+    "ytd_previous",
 ]
 
 
@@ -29,6 +30,24 @@ def _month_start(value: date) -> date:
 
 def _week_start(value: date) -> date:
     return value - timedelta(days=value.weekday())
+
+
+def _same_day_previous_year(value: date) -> date:
+    """
+    Retorna a mesma data no ano anterior.
+
+    Protege o caso de 29 de fevereiro:
+    29/02 de ano bissexto vira 28/02 do ano anterior,
+    caso o ano anterior não seja bissexto.
+    """
+    try:
+        return value.replace(year=value.year - 1)
+    except ValueError:
+        return value.replace(
+            year=value.year - 1,
+            month=2,
+            day=28
+        )
 
 
 def resolve_window(period_type: str, reference_date: date) -> PeriodWindow:
@@ -102,6 +121,15 @@ def resolve_window(period_type: str, reference_date: date) -> PeriodWindow:
             period_type=period_type,
             date_from=date(reference_date.year, 1, 1),
             date_to=reference_date
+        )
+
+    if period_type == "ytd_previous":
+        previous_reference_date = _same_day_previous_year(reference_date)
+
+        return PeriodWindow(
+            period_type=period_type,
+            date_from=date(previous_reference_date.year, 1, 1),
+            date_to=previous_reference_date
         )
 
     raise ValueError(f"period_type não reconhecido: {period_type}")

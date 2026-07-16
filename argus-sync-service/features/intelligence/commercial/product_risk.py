@@ -10,18 +10,24 @@ class ProductRisk:
         if product_abc_df is None or len(product_abc_df) == 0:
             return risks
 
-        abc_lookup = product_abc_df[[
-            "prod_codigo",
-            "classe"
-        ]].copy()
+        lookup_cols = ["prod_codigo", "classe"]
+        merge_cols = ["prod_codigo"]
+
+        if "Empresa" in product_df.columns and "Empresa" in product_abc_df.columns:
+            lookup_cols = ["Empresa", "prod_codigo", "classe"]
+            merge_cols = ["Empresa", "prod_codigo"]
+
+        abc_lookup = product_abc_df[lookup_cols].copy()
 
         df = product_df.merge(
             abc_lookup,
-            on="prod_codigo",
+            on=merge_cols,
             how="left"
         )
 
         for _, row in df.iterrows():
+
+            empresa = row["Empresa"] if "Empresa" in row else "TOTAL"
 
             if (
                 row["classe"] == "A"
@@ -29,6 +35,7 @@ class ProductRisk:
                 and row["faturamento_total"] >= 1500
             ):
                 risks.append({
+                    "empresa": empresa,
                     "prod_codigo": str(row["prod_codigo"]),
                     "produto": row["produto"],
                     "risk_type": "high_value_low_frequency",
@@ -46,6 +53,7 @@ class ProductRisk:
                 and row["clientes"] == 1
             ):
                 risks.append({
+                    "empresa": empresa,
                     "prod_codigo": str(row["prod_codigo"]),
                     "produto": row["produto"],
                     "risk_type": "low_customer_base",

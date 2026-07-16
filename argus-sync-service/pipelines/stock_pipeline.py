@@ -41,14 +41,13 @@ class StockPipeline:
         stock_df = stock_snapshot.build(estoque, vendas)
 
         # -------------------------
-        # SNAPSHOT
+        # SNAPSHOT POR PRODUTO
         # -------------------------
         stock_records = []
 
         for _, row in stock_df.iterrows():
 
             ultima_venda = None
-
             if pd.notnull(row.get("ultima_venda")):
                 try:
                     ultima_venda = pd.to_datetime(row["ultima_venda"]).date().isoformat()
@@ -79,6 +78,34 @@ class StockPipeline:
             if pd.isna(media_venda_mensal):
                 media_venda_mensal = 0
 
+            qtd_vendida_180d = row.get("qtd_vendida_180d")
+            if pd.isna(qtd_vendida_180d):
+                qtd_vendida_180d = 0
+
+            faturamento_180d = row.get("faturamento_180d")
+            if pd.isna(faturamento_180d):
+                faturamento_180d = 0
+
+            media_venda_6m = row.get("media_venda_6m")
+            if pd.isna(media_venda_6m):
+                media_venda_6m = 0
+
+            estoque_ideal = row.get("estoque_ideal")
+            if pd.isna(estoque_ideal):
+                estoque_ideal = 0
+
+            ponto_pedido = row.get("ponto_pedido")
+            if pd.isna(ponto_pedido):
+                ponto_pedido = 0
+
+            sugestao_compra = row.get("sugestao_compra")
+            if pd.isna(sugestao_compra):
+                sugestao_compra = 0
+
+            dias_para_esgotar = row.get("dias_para_esgotar")
+            if pd.isna(dias_para_esgotar):
+                dias_para_esgotar = None
+
             stock_records.append({
                 "reference_date": filters["reference_date"],
                 "period_type": filters["period_type"],
@@ -92,10 +119,19 @@ class StockPipeline:
                 "faturamento_30d": round(float(row["faturamento_30d"]), 2),
                 "qtd_vendida_90d": round(float(row["qtd_vendida_90d"]), 2),
                 "faturamento_90d": round(float(row["faturamento_90d"]), 2),
+                "qtd_vendida_180d": round(float(qtd_vendida_180d), 2),
+                "faturamento_180d": round(float(faturamento_180d), 2),
                 "ultima_venda": ultima_venda,
                 "dias_sem_venda": None if dias_sem_venda is None else int(dias_sem_venda),
                 "media_venda_mensal": round(float(media_venda_mensal), 4),
+                "media_venda_6m": round(float(media_venda_6m), 4),
                 "cobertura_estoque": None if cobertura is None else round(float(cobertura), 4),
+                "estoque_ideal": round(float(estoque_ideal), 4),
+                "ponto_pedido": round(float(ponto_pedido), 4),
+                "sugestao_compra": int(sugestao_compra),
+                "dias_para_esgotar": None if dias_para_esgotar is None else int(dias_para_esgotar),
+                "replenishment_status": row.get("replenishment_status"),
+                "replenishment_action": row.get("replenishment_action"),
                 "risk_type": row["risk_type"],
                 "status": row["status"]
             })
@@ -127,7 +163,8 @@ class StockPipeline:
             "sem_giro": int(overview["sem_giro"]),
             "excesso": int(overview["excesso"]),
             "headline": overview["headline"],
-            "status": overview["status"]
+            "posicoes_estoque": int(overview["posicoes_estoque"]),
+            "status": overview["status"]            
         }]
 
         self.supabase.replace_snapshot(
@@ -136,9 +173,6 @@ class StockPipeline:
             overview_records
         )
 
-        # -------------------------
-        # SCORECARDS
-        # -------------------------
         scorecard_records = []
 
         for card in scorecards:
@@ -160,9 +194,6 @@ class StockPipeline:
             scorecard_records
         )
 
-        # -------------------------
-        # RISKS
-        # -------------------------
         risk_records = []
 
         for risk in risks:
@@ -207,9 +238,6 @@ class StockPipeline:
             risk_records
         )
 
-        # -------------------------
-        # COMPANY SNAPSHOT
-        # -------------------------
         company_records = []
 
         for item in company_snapshot:
