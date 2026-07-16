@@ -7,6 +7,7 @@ from pipelines.sales_pipeline import SalesPipeline
 from pipelines.stock_pipeline import StockPipeline
 from pipelines.customer_geo_pipeline import CustomerGeoPipeline
 from pipelines.lost_sales_pipeline import LostSalesPipeline
+from pipelines.profitability_pipeline import ProfitabilityPipeline
 
 
 def main():
@@ -42,6 +43,12 @@ def main():
         supabase_connector
     )
     stock_result = stock.run()
+
+    profitability = ProfitabilityPipeline(
+        sql_connector,
+        supabase_connector
+    )
+    profitability_result = profitability.run()
 
     lost_sales = LostSalesPipeline(
         google_sheets_connector,
@@ -211,6 +218,57 @@ def main():
     print(
         f"  Stock Status: "
         f"{stock_result['stock_status']}"
+    )
+
+    print()
+    print("✓ Profitability Pipeline finalizada")
+    print(
+        f"  Períodos gerados: "
+        f"{profitability_result['periods_generated']}"
+    )
+    print(
+        f"  Linhas YTD na origem: "
+        f"{profitability_result['ytd_source_rows']:,}"
+    )
+    print(
+        f"  Linhas YTD analisáveis: "
+        f"{profitability_result['ytd_analyzable_rows']:,}"
+    )
+    print(
+        f"  Dimensões YTD: "
+        f"{profitability_result['ytd_dimensions']:,}"
+    )
+    print(
+        f"  Riscos YTD: "
+        f"{profitability_result['ytd_risks']:,}"
+    )
+    print(
+        f"  Recomendações YTD: "
+        f"{profitability_result['ytd_recommendations']:,}"
+    )
+    print(
+        f"  Faturamento analisável YTD: R$ "
+        f"{profitability_result['ytd_revenue']:,.2f}"
+    )
+    print(
+        f"  Lucro bruto estimado YTD: R$ "
+        f"{profitability_result['ytd_profit']:,.2f}"
+    )
+    print(
+        f"  Margem ponderada YTD: "
+        f"{profitability_result['ytd_margin']:.2f}%"
+    )
+    print(
+        f"  Markup ponderado YTD: "
+        f"{profitability_result['ytd_markup']:.2f}%"
+    )
+    print(
+        f"  Cobertura financeira YTD: "
+        f"{profitability_result['ytd_coverage'] * 100:.2f}%"
+    )
+    print(
+        f"  Status YTD: "
+        f"{profitability_result['ytd_status']}"
     )
 
     print()
