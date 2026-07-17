@@ -48,6 +48,21 @@ class ProfitabilityPipeline:
         "preco_custo cadastrado atual."
     )
 
+    DETAIL_COLUMNS = [
+        "data_venda", "ano", "mes", "ano_mes", "numero_pedido",
+        "empresa_key", "empresa_oficial", "vendedor",
+        "codigo_cliente_normalizado", "cliente", "codigo_produto",
+        "codigo_fabricante", "produto", "produto_fora_escopo",
+        "categoria", "curva_abcde", "quantidade",
+        "preco_venda_unitario", "preco_venda_medio", "preco_custo",
+        "faturamento", "custo_total", "lucro_bruto",
+        "margem_percentual", "markup_percentual", "status_custo",
+        "custo_valido", "dado_suspeito", "status_analise",
+        "elegivel_kpi", "faturamento_analisavel",
+        "custo_analisavel", "lucro_analisavel",
+        "status_rentabilidade",
+    ]
+
     def __init__(
         self,
         sql_connector,
@@ -64,6 +79,65 @@ class ProfitabilityPipeline:
             return default
 
         return float(value)
+
+    @staticmethod
+    def _serialize_value(value):
+
+        if value is None:
+            return None
+
+        if isinstance(value, (pd.Timestamp, datetime)):
+            return value.isoformat()
+
+        if pd.isna(value):
+            return None
+
+        if hasattr(value, "item"):
+            return value.item()
+
+        return value
+
+    def _build_detail_records(
+        self,
+        period_df,
+        reference_date,
+        period_type
+    ):
+
+        if period_df.empty:
+            return []
+
+        missing_columns = [
+            column
+            for column in self.DETAIL_COLUMNS
+            if column not in period_df.columns
+        ]
+
+        if missing_columns:
+            raise KeyError(
+                "Colunas ausentes para a mart detalhada: "
+                + ", ".join(missing_columns)
+            )
+
+        updated_at = datetime.now().isoformat()
+        records = []
+
+        for row in period_df[
+            self.DETAIL_COLUMNS
+        ].to_dict(orient="records"):
+
+            record = {
+                "reference_date": reference_date,
+                "period_type": period_type,
+                "updated_at": updated_at,
+            }
+
+            for key, value in row.items():
+                record[key] = self._serialize_value(value)
+
+            records.append(record)
+
+        return records
 
     def _build_overview_record(
         self,
@@ -472,6 +546,7 @@ class ProfitabilityPipeline:
         reference_date,
         period_type,
         overview_record,
+        detail_records,
         dimension_records,
         risk_records,
         recommendation_records,
@@ -487,6 +562,13 @@ class ProfitabilityPipeline:
             "mart_profitability_overview",
             filters,
             [overview_record]
+        )
+
+        self.supabase.replace_snapshot_batches(
+            "mart_profitability_detail_snapshot",
+            filters,
+            detail_records,
+            batch_size=500
         )
 
         self.supabase.replace_snapshot_batches(
@@ -665,6 +747,14 @@ class ProfitabilityPipeline:
                 )
             )
 
+            detail_records = (
+                self._build_detail_records(
+                    period_df,
+                    reference_date,
+                    period_type
+                )
+            )
+
             dimension_records = (
                 self._build_dimension_records(
                     dimensions,
@@ -701,6 +791,7 @@ class ProfitabilityPipeline:
                 reference_date=reference_date,
                 period_type=period_type,
                 overview_record=overview_record,
+                detail_records=detail_records,
                 dimension_records=dimension_records,
                 risk_records=risk_records,
                 recommendation_records=(
@@ -711,6 +802,7 @@ class ProfitabilityPipeline:
 
             period_results[period_type] = {
                 "source_rows": len(period_df),
+                "detail_rows": len(detail_records),
                 "analyzable_rows": overview[
                     "linhas_analisaveis"
                 ],
@@ -757,6 +849,12 @@ class ProfitabilityPipeline:
             "ytd_source_rows": (
                 ytd_result.get(
                     "source_rows",
+                    0
+                )
+            ),
+            "ytd_detail_rows": (
+                ytd_result.get(
+                    "detail_rows",
                     0
                 )
             ),
