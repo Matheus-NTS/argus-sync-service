@@ -253,7 +253,25 @@ class ProfitabilityOverview:
                     if pd.isna(top_row["margem"])
                     else float(top_row["margem"])
                 ),
-            }
+                "participacao_faturamento": (
+                    float(top_row["faturamento"])
+                    / metrics["faturamento"]
+                    if metrics["faturamento"] > 0
+                    else 0
+                ),
+                "participacao_lucro": (
+                    float(top_row["lucro"])
+                    / metrics["lucro"]
+                    if metrics["lucro"] != 0
+                    else 0
+                ),
+    "participacao_lucro": (
+        float(top_row["lucro"])
+        / metrics["lucro"]
+        if metrics["lucro"] != 0
+        else 0
+    ),
+}
 
         faturamento_total_origem = float(
             dataset.loc[
