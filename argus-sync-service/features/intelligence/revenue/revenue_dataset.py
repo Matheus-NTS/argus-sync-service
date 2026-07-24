@@ -1,5 +1,8 @@
 import pandas as pd
 
+from features.shared.commercial_dimensions import (
+    CommercialDimensions,
+)
 from transformers.pedido_transformer import PedidoTransformer
 
 
@@ -11,11 +14,16 @@ class RevenueDataset:
     - apenas pedidos comerciais válidos;
     - apenas situação CONCRETIZADO;
     - padronização de datas e valores;
+    - normalização das dimensões de empresa e vendedor;
     - remoção de linhas sem data ou faturamento válido.
 
-    Observação:
+    Observações:
     - o produto 999999 compõe o faturamento oficial
-      e não deve ser excluído deste módulo.
+      e não deve ser excluído deste módulo;
+    - o campo Vendedor permanece com o nome completo
+      normalizado, pois será usado como chave interna;
+    - o nome resumido do vendedor será criado apenas
+      nas camadas de apresentação.
     """
 
     REQUIRED_COLUMNS = [
@@ -54,19 +62,30 @@ class RevenueDataset:
             errors="coerce",
         )
 
-        valid_date_mask = pedidos["Data"].notna()
+        valid_date_mask = pedidos[
+            "Data"
+        ].notna()
 
-        valid_revenue_mask = (
-            pedidos["Valor_total_Unitario"].notna()
-        )
+        valid_revenue_mask = pedidos[
+            "Valor_total_Unitario"
+        ].notna()
 
         pedidos = pedidos[
             valid_date_mask
             & valid_revenue_mask
         ].copy()
 
-        pedidos["ano"] = pedidos["Data"].dt.year
-        pedidos["mes"] = pedidos["Data"].dt.month
+        pedidos["ano"] = (
+            pedidos["Data"]
+            .dt.year
+            .astype(int)
+        )
+
+        pedidos["mes"] = (
+            pedidos["Data"]
+            .dt.month
+            .astype(int)
+        )
 
         pedidos["ano_mes"] = (
             pedidos["Data"]
@@ -76,31 +95,37 @@ class RevenueDataset:
 
         pedidos["Empresa"] = (
             pedidos["Empresa"]
-            .fillna("Não informado")
-            .astype(str)
-            .str.strip()
+            .apply(
+                CommercialDimensions.normalize_company
+            )
         )
 
         pedidos["Vendedor"] = (
             pedidos["Vendedor"]
-            .fillna("Não informado")
-            .astype(str)
-            .str.strip()
+            .apply(
+                CommercialDimensions.normalize_seller
+            )
         )
 
         print()
-        print("Base oficial de faturamento preparada:")
+        print(
+            "Base oficial de faturamento preparada:"
+        )
+
         print(
             f"  Registros finais: {len(pedidos):,}"
         )
+
         print(
             "  Data inicial: "
             f"{pedidos['Data'].min()}"
         )
+
         print(
             "  Data final: "
             f"{pedidos['Data'].max()}"
         )
+
         print(
             "  Faturamento total da base: R$ "
             f"{pedidos['Valor_total_Unitario'].sum():,.2f}"
@@ -120,6 +145,7 @@ class RevenueDataset:
 
         if missing_columns:
             raise KeyError(
-                "Colunas obrigatórias ausentes na base de pedidos: "
+                "Colunas obrigatórias ausentes "
+                "na base de pedidos: "
                 + ", ".join(missing_columns)
             )
