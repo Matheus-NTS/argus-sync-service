@@ -163,6 +163,45 @@ def main():
     )
 
     print()
+    print("✓ Revenue Intelligence finalizada")
+    print(
+        f"  Histórico mensal: "
+        f"{sales_result['revenue_monthly_records']}"
+    )
+    print(
+        f"  Empresas mensais: "
+        f"{sales_result['revenue_company_monthly_records']}"
+    )
+    print(
+        f"  Vendedores mensais: "
+        f"{sales_result['revenue_seller_monthly_records']}"
+    )
+    print(
+        f"  Resumo atual: "
+        f"{sales_result['revenue_current_summary_records']}"
+    )
+    print(
+        f"  Histórico anual: "
+        f"{sales_result['revenue_yearly_records']}"
+    )
+    print(
+        f"  Comparativos YTD: "
+        f"{sales_result['revenue_ytd_records']}"
+    )
+    print(
+        f"  Projeções mensais: "
+        f"{sales_result['revenue_projection_monthly_records']}"
+    )
+    print(
+        f"  Resumo de projeções: "
+        f"{sales_result['revenue_projection_summary_records']}"
+    )
+    print(
+        f"  Ano-base da projeção: "
+        f"{sales_result['revenue_projection_base_year']}"
+    )
+
+    print()
     print("✓ Customer Geo Pipeline finalizada")
     print(
         f"  Registros geográficos: "
