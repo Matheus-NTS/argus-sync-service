@@ -7,8 +7,8 @@ import numpy as np
 import pandas as pd
 
 from extractors.meta_extractor import MetaExtractor
-
 from features.intelligence.revenue.meta_dataset import MetaDataset
+from features.intelligence.revenue.revenue_daily import RevenueDaily
 from features.intelligence.revenue.revenue_history import RevenueHistory
 from features.intelligence.revenue.revenue_overview import RevenueOverview
 from features.intelligence.revenue.revenue_projection import (
@@ -145,25 +145,33 @@ class RevenueIntelligencePipeline:
             "faixa_desempenho",
         ],
         "mart_revenue_current_summary": [
-            "reference_date",
-            "ano",
-            "mes",
-            "faturamento",
-            "meta",
-            "supermeta",
-            "hipermeta",
-            "atingimento_meta",
-            "gap_meta",
-            "status_meta",
-            "faixa_desempenho",
-            "empresas_com_faturamento",
-            "vendedores_com_faturamento",
-            "vendedores_com_meta_valida",
-            "vendedores_que_bateram_meta",
-            "vendedores_em_supermeta",
-            "vendedores_em_hipermeta",
-            "status",
-        ],
+    "reference_date",
+    "ano",
+    "mes",
+    "faturamento",
+    "faturamento_dia",
+    "meta",
+    "meta_diaria",
+    "supermeta",
+    "hipermeta",
+    "atingimento_meta",
+    "gap_meta",
+    "ritmo_atual",
+    "ritmo_necessario",
+    "dias_uteis_mes",
+    "dias_uteis_decorridos",
+    "dias_uteis_restantes",
+    "projecao_fechamento",
+    "status_meta",
+    "faixa_desempenho",
+    "empresas_com_faturamento",
+    "vendedores_com_faturamento",
+    "vendedores_com_meta_valida",
+    "vendedores_que_bateram_meta",
+    "vendedores_em_supermeta",
+    "vendedores_em_hipermeta",
+    "status",
+],
         "mart_revenue_yearly": [
             "reference_date",
             "ano",
@@ -232,6 +240,9 @@ class RevenueIntelligencePipeline:
     }
 
     INTEGER_COLUMNS = {
+        "dias_uteis_mes",
+        "dias_uteis_decorridos",
+        "dias_uteis_restantes",
         "ano",
         "mes",
         "trimestre",
@@ -274,7 +285,6 @@ class RevenueIntelligencePipeline:
         self,
         pedidos: pd.DataFrame,
     ) -> dict[str, Any]:
-
         reference_date = date.today()
 
         revenue = self._prepare_revenue(
@@ -295,13 +305,22 @@ class RevenueIntelligencePipeline:
             revenue
         )
 
+        daily = RevenueDaily(
+            revenue_df=revenue,
+            meta_df=metas.general_monthly,
+            reference_date=reference_date,
+        ).build()
+
         overview = RevenueOverview(
-            reference_date=reference_date
+            reference_date=reference_date,
         ).build(
             history=history,
             metas=metas,
+            daily=daily,
         )
 
+        # O bloco abaixo permanece pronto para a próxima etapa.
+        # Ele será alcançado após removermos o SystemExit temporário.
         projection_service = RevenueProjection()
 
         base_year = self._resolve_projection_base_year(
@@ -309,11 +328,9 @@ class RevenueIntelligencePipeline:
             reference_date,
         )
 
-        projection_wide = (
-            projection_service.build(
-                revenue_df=revenue,
-                base_year=base_year,
-            )
+        projection_wide = projection_service.build(
+            revenue_df=revenue,
+            base_year=base_year,
         )
 
         projection_monthly = (
@@ -329,31 +346,31 @@ class RevenueIntelligencePipeline:
         )
 
         datasets = {
-            "mart_revenue_monthly":
-                overview.monthly,
-            "mart_revenue_company_monthly":
-                overview.company_monthly,
-            "mart_revenue_seller_monthly":
-                overview.seller_monthly,
-            "mart_revenue_current_summary":
-                overview.current_summary,
-            "mart_revenue_yearly":
-                history["yearly"],
-            "mart_revenue_ytd":
-                history["ytd"],
-            "mart_revenue_projection_monthly":
-                projection_monthly,
-            "mart_revenue_projection_summary":
-                projection_summary,
+            "mart_revenue_monthly": overview.monthly,
+            "mart_revenue_company_monthly": (
+                overview.company_monthly
+            ),
+            "mart_revenue_seller_monthly": (
+                overview.seller_monthly
+            ),
+            "mart_revenue_current_summary": (
+                overview.current_summary
+            ),
+            "mart_revenue_yearly": history["yearly"],
+            "mart_revenue_ytd": history["ytd"],
+            "mart_revenue_projection_monthly": (
+                projection_monthly
+            ),
+            "mart_revenue_projection_summary": (
+                projection_summary
+            ),
         }
 
         result = {
-            "revenue_projection_base_year":
-                base_year,
+            "revenue_projection_base_year": base_year,
         }
 
         for table_name, dataframe in datasets.items():
-
             print(
                 f"  Publicando Revenue Intelligence: "
                 f"{table_name}"
@@ -377,8 +394,7 @@ class RevenueIntelligencePipeline:
             self.supabase.replace_snapshot_batches(
                 table_name=table_name,
                 filters={
-                    "reference_date":
-                        reference_date.isoformat()
+                    "reference_date": reference_date.isoformat()
                 },
                 data=records,
                 batch_size=500,
@@ -394,7 +410,6 @@ class RevenueIntelligencePipeline:
     def _prepare_revenue(
         pedidos: pd.DataFrame,
     ) -> pd.DataFrame:
-
         if pedidos is None or pedidos.empty:
             raise ValueError(
                 "A base de pedidos comerciais está vazia."
@@ -423,14 +438,10 @@ class RevenueIntelligencePipeline:
             )
 
         if "ano" not in revenue.columns:
-            revenue["ano"] = (
-                revenue["Data"].dt.year
-            )
+            revenue["ano"] = revenue["Data"].dt.year
 
         if "mes" not in revenue.columns:
-            revenue["mes"] = (
-                revenue["Data"].dt.month
-            )
+            revenue["mes"] = revenue["Data"].dt.month
 
         revenue["ano"] = pd.to_numeric(
             revenue["ano"],
@@ -447,13 +458,8 @@ class RevenueIntelligencePipeline:
             & revenue["mes"].notna()
         ].copy()
 
-        revenue["ano"] = (
-            revenue["ano"].astype(int)
-        )
-
-        revenue["mes"] = (
-            revenue["mes"].astype(int)
-        )
+        revenue["ano"] = revenue["ano"].astype(int)
+        revenue["mes"] = revenue["mes"].astype(int)
 
         if "ano_mes" not in revenue.columns:
             revenue["ano_mes"] = (
@@ -519,13 +525,9 @@ class RevenueIntelligencePipeline:
             )
 
             if not complete_years.empty:
-                return int(
-                    complete_years.max()
-                )
+                return int(complete_years.max())
 
-        previous_year = (
-            reference_date.year - 1
-        )
+        previous_year = reference_date.year - 1
 
         if previous_year in set(years.tolist()):
             return previous_year
@@ -538,23 +540,14 @@ class RevenueIntelligencePipeline:
         table_name: str,
         reference_date: date,
     ) -> list[dict[str, Any]]:
-
         if dataframe is None:
             return []
 
         df = dataframe.copy()
+        df = df.rename(columns=self.COLUMN_ALIASES)
+        df["reference_date"] = reference_date.isoformat()
 
-        df = df.rename(
-            columns=self.COLUMN_ALIASES
-        )
-
-        df["reference_date"] = (
-            reference_date.isoformat()
-        )
-
-        expected_columns = (
-            self.TABLE_COLUMNS[table_name]
-        )
+        expected_columns = self.TABLE_COLUMNS[table_name]
 
         for column in expected_columns:
             if column not in df.columns:
@@ -579,9 +572,7 @@ class RevenueIntelligencePipeline:
                 )
             )
 
-        records = df.to_dict(
-            orient="records"
-        )
+        records = df.to_dict(orient="records")
 
         return [
             {
@@ -639,7 +630,6 @@ class RevenueIntelligencePipeline:
     def _to_native(
         value: Any,
     ) -> Any:
-
         if value is None:
             return None
 
@@ -685,7 +675,6 @@ class RevenueIntelligencePipeline:
 
         for row_index, record in enumerate(records):
             for column in self.INTEGER_COLUMNS:
-
                 if column not in record:
                     continue
 

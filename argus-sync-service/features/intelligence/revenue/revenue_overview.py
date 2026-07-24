@@ -1,3 +1,6 @@
+from features.intelligence.revenue.revenue_daily import (
+    RevenueDailyResult,
+)
 from features.shared.commercial_dimensions import (
     CommercialDimensions,
 )
@@ -52,9 +55,10 @@ class RevenueOverview:
         )
 
     def build(
-        self,
-        history: dict[str, pd.DataFrame],
-        metas: MetaDatasetResult,
+    self,
+    history: dict[str, pd.DataFrame],
+    metas: MetaDatasetResult,
+    daily: RevenueDailyResult,
     ) -> RevenueOverviewResult:
         self._validate_history(history)
 
@@ -77,6 +81,7 @@ class RevenueOverview:
             monthly=monthly,
             company_monthly=company_monthly,
             seller_monthly=seller_monthly,
+            daily=daily,
         )
 
         return RevenueOverviewResult(
@@ -664,10 +669,11 @@ class RevenueOverview:
         return "abaixo_meta"
 
     def _build_current_summary(
-        self,
-        monthly: pd.DataFrame,
-        company_monthly: pd.DataFrame,
-        seller_monthly: pd.DataFrame,
+    self,
+    monthly: pd.DataFrame,
+    company_monthly: pd.DataFrame,
+    seller_monthly: pd.DataFrame,
+    daily: RevenueDailyResult,
     ) -> pd.DataFrame:
         year = self.reference_date.year
         month = self.reference_date.month
@@ -715,6 +721,20 @@ class RevenueOverview:
             "mes": month,
             "faturamento": float(
                 current_row["faturamento"]
+            ),
+            "faturamento_dia": daily.faturamento_dia,
+            "meta_diaria": daily.meta_diaria,
+            "ritmo_atual": daily.ritmo_atual,
+            "ritmo_necessario": daily.ritmo_necessario,
+            "dias_uteis_mes": daily.dias_uteis_mes,
+            "dias_uteis_decorridos": (
+                daily.dias_uteis_decorridos
+            ),
+            "dias_uteis_restantes": (
+                daily.dias_uteis_restantes
+            ),
+            "projecao_fechamento": (
+                daily.projecao_fechamento
             ),
             "meta": self._safe_float(
                 current_row.get("meta")
