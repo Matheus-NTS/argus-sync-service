@@ -1,0 +1,720 @@
+from __future__ import annotations
+
+from datetime import date, datetime
+from typing import Any
+
+import numpy as np
+import pandas as pd
+
+from extractors.meta_extractor import MetaExtractor
+
+from features.intelligence.revenue.meta_dataset import MetaDataset
+from features.intelligence.revenue.revenue_history import RevenueHistory
+from features.intelligence.revenue.revenue_overview import RevenueOverview
+from features.intelligence.revenue.revenue_projection import (
+    RevenueProjection,
+)
+
+
+class RevenueIntelligencePipeline:
+    """
+    Publica os contratos oficiais do módulo Faturamento.
+
+    Responsabilidades:
+    - utilizar os pedidos comerciais já filtrados;
+    - extrair e preparar as metas;
+    - construir históricos de faturamento;
+    - unir realizado e metas;
+    - gerar projeções anuais;
+    - publicar snapshots no Supabase.
+
+    A pipeline não extrai pedidos novamente.
+    """
+
+    TABLE_COLUMNS = {
+        "mart_revenue_monthly": [
+            "reference_date",
+            "ano",
+            "mes",
+            "mes_nome",
+            "ano_mes",
+            "trimestre",
+            "semestre",
+            "empresa",
+            "nivel",
+            "faturamento",
+            "pedidos",
+            "ticket_medio",
+            "empresas_ativas",
+            "vendedores_ativos",
+            "tem_movimento",
+            "periodo_futuro",
+            "mes_em_aberto",
+            "faturamento_mes_anterior",
+            "crescimento_mom",
+            "faturamento_ano_anterior",
+            "crescimento_yoy",
+            "acumulado_ytd",
+            "meta",
+            "supermeta",
+            "hipermeta",
+            "status_meta",
+            "meta_valida",
+            "atingimento_meta",
+            "atingimento_supermeta",
+            "atingimento_hipermeta",
+            "gap_meta",
+            "gap_supermeta",
+            "gap_hipermeta",
+            "falta_para_meta",
+            "falta_para_supermeta",
+            "falta_para_hipermeta",
+            "faixa_desempenho",
+            "empresas_com_meta",
+            "vendedores_cadastrados_meta",
+            "vendedores_com_meta",
+            "vendedores_pendentes",
+        ],
+        "mart_revenue_company_monthly": [
+            "reference_date",
+            "ano",
+            "mes",
+            "ano_mes",
+            "empresa",
+            "nivel",
+            "faturamento",
+            "pedidos",
+            "vendedores_ativos",
+            "ticket_medio",
+            "faturamento_total_mes",
+            "participacao_mensal",
+            "ranking_empresa_mes",
+            "meta",
+            "supermeta",
+            "hipermeta",
+            "status_meta",
+            "meta_valida",
+            "atingimento_meta",
+            "atingimento_supermeta",
+            "atingimento_hipermeta",
+            "gap_meta",
+            "gap_supermeta",
+            "gap_hipermeta",
+            "falta_para_meta",
+            "falta_para_supermeta",
+            "falta_para_hipermeta",
+            "faixa_desempenho",
+            "vendedores_cadastrados_meta",
+            "vendedores_com_meta",
+            "vendedores_pendentes",
+        ],
+        "mart_revenue_seller_monthly": [
+            "reference_date",
+            "ano",
+            "mes",
+            "ano_mes",
+            "empresa",
+            "vendedor_key",
+            "vendedor",
+            "seller_identity",
+            "nivel",
+            "faturamento",
+            "pedidos",
+            "ticket_medio",
+            "faturamento_empresa_mes",
+            "participacao_empresa",
+            "ranking_vendedor_empresa",
+            "ranking_faturamento_empresa",
+            "ranking_atingimento_empresa",
+            "meta",
+            "supermeta",
+            "hipermeta",
+            "status_meta",
+            "meta_valida",
+            "meta_configurada",
+            "meta_pendente",
+            "atingimento_meta",
+            "atingimento_supermeta",
+            "atingimento_hipermeta",
+            "gap_meta",
+            "gap_supermeta",
+            "gap_hipermeta",
+            "falta_para_meta",
+            "falta_para_supermeta",
+            "falta_para_hipermeta",
+            "faixa_desempenho",
+        ],
+        "mart_revenue_current_summary": [
+            "reference_date",
+            "ano",
+            "mes",
+            "faturamento",
+            "meta",
+            "supermeta",
+            "hipermeta",
+            "atingimento_meta",
+            "gap_meta",
+            "status_meta",
+            "faixa_desempenho",
+            "empresas_com_faturamento",
+            "vendedores_com_faturamento",
+            "vendedores_com_meta_valida",
+            "vendedores_que_bateram_meta",
+            "vendedores_em_supermeta",
+            "vendedores_em_hipermeta",
+            "status",
+        ],
+        "mart_revenue_yearly": [
+            "reference_date",
+            "ano",
+            "faturamento",
+            "pedidos",
+            "meses_com_movimento",
+            "ticket_medio",
+            "media_mensal",
+            "melhor_mes",
+            "melhor_mes_nome",
+            "melhor_mes_faturamento",
+            "pior_mes",
+            "pior_mes_nome",
+            "pior_mes_faturamento",
+            "ano_completo",
+            "faturamento_ano_anterior",
+            "ano_anterior_completo",
+            "crescimento_anual",
+        ],
+        "mart_revenue_ytd": [
+            "reference_date",
+            "ano",
+            "mes_limite",
+            "faturamento_ytd",
+            "pedidos_ytd",
+            "faturamento_ytd_ano_anterior",
+            "crescimento_ytd",
+        ],
+        "mart_revenue_projection_monthly": [
+            "reference_date",
+            "ano_base",
+            "ano_projetado",
+            "mes",
+            "mes_nome",
+            "cenario_percentual",
+            "faturamento_base",
+            "participacao_ano_base",
+            "faturamento_projetado",
+            "crescimento_valor",
+        ],
+        "mart_revenue_projection_summary": [
+            "reference_date",
+            "ano_base",
+            "ano_projetado",
+            "cenario_percentual",
+            "faturamento_ano_base",
+            "faturamento_projetado",
+            "crescimento_valor",
+            "media_mensal_projetada",
+        ],
+    }
+
+    COLUMN_ALIASES = {
+        "super_meta": "supermeta",
+        "hiper_meta": "hipermeta",
+        "atingimento_super_meta": "atingimento_supermeta",
+        "atingimento_hiper_meta": "atingimento_hipermeta",
+        "gap_super_meta": "gap_supermeta",
+        "gap_hiper_meta": "gap_hipermeta",
+        "falta_para_super_meta": "falta_para_supermeta",
+        "falta_para_hiper_meta": "falta_para_hipermeta",
+        "vendedores_meta_valida": "vendedores_com_meta_valida",
+        "vendedores_bateram_meta": "vendedores_que_bateram_meta",
+        "vendedores_supermeta": "vendedores_em_supermeta",
+        "vendedores_hipermeta": "vendedores_em_hipermeta",
+    }
+
+    INTEGER_COLUMNS = {
+        "ano",
+        "mes",
+        "trimestre",
+        "semestre",
+        "pedidos",
+        "empresas_ativas",
+        "vendedores_ativos",
+        "empresas_com_meta",
+        "vendedores_cadastrados_meta",
+        "vendedores_com_meta",
+        "vendedores_pendentes",
+        "ranking_empresa_mes",
+        "ranking_vendedor_empresa",
+        "ranking_faturamento_empresa",
+        "ranking_atingimento_empresa",
+        "empresas_com_faturamento",
+        "vendedores_com_faturamento",
+        "vendedores_com_meta_valida",
+        "vendedores_que_bateram_meta",
+        "vendedores_em_supermeta",
+        "vendedores_em_hipermeta",
+        "meses_com_movimento",
+        "melhor_mes",
+        "pior_mes",
+        "mes_limite",
+        "pedidos_ytd",
+        "ano_base",
+        "ano_projetado",
+    }
+
+    def __init__(
+        self,
+        sql_connector,
+        supabase_connector,
+    ):
+        self.sql_connector = sql_connector
+        self.supabase = supabase_connector
+
+    def run(
+        self,
+        pedidos: pd.DataFrame,
+    ) -> dict[str, Any]:
+
+        reference_date = date.today()
+
+        revenue = self._prepare_revenue(
+            pedidos
+        )
+
+        metas_raw = MetaExtractor(
+            self.sql_connector
+        ).extract()
+
+        metas = MetaDataset(
+            reference_date=reference_date
+        ).build(
+            metas_raw
+        )
+
+        history = RevenueHistory().build(
+            revenue
+        )
+
+        overview = RevenueOverview(
+            reference_date=reference_date
+        ).build(
+            history=history,
+            metas=metas,
+        )
+
+        projection_service = RevenueProjection()
+
+        base_year = self._resolve_projection_base_year(
+            history["yearly"],
+            reference_date,
+        )
+
+        projection_wide = (
+            projection_service.build(
+                revenue_df=revenue,
+                base_year=base_year,
+            )
+        )
+
+        projection_monthly = (
+            projection_service.build_long_format(
+                projection_wide
+            )
+        )
+
+        projection_summary = (
+            projection_service.build_summary(
+                projection_wide
+            )
+        )
+
+        datasets = {
+            "mart_revenue_monthly":
+                overview.monthly,
+            "mart_revenue_company_monthly":
+                overview.company_monthly,
+            "mart_revenue_seller_monthly":
+                overview.seller_monthly,
+            "mart_revenue_current_summary":
+                overview.current_summary,
+            "mart_revenue_yearly":
+                history["yearly"],
+            "mart_revenue_ytd":
+                history["ytd"],
+            "mart_revenue_projection_monthly":
+                projection_monthly,
+            "mart_revenue_projection_summary":
+                projection_summary,
+        }
+
+        result = {
+            "revenue_projection_base_year":
+                base_year,
+        }
+
+        for table_name, dataframe in datasets.items():
+
+            print(
+                f"  Publicando Revenue Intelligence: "
+                f"{table_name}"
+            )
+
+            records = self._prepare_records(
+                dataframe=dataframe,
+                table_name=table_name,
+                reference_date=reference_date,
+            )
+
+            print(
+                f"Registros preparados: {len(records):,}"
+            )
+
+            self._validate_integer_records(
+                table_name=table_name,
+                records=records,
+            )
+
+            self.supabase.replace_snapshot_batches(
+                table_name=table_name,
+                filters={
+                    "reference_date":
+                        reference_date.isoformat()
+                },
+                data=records,
+                batch_size=500,
+            )
+
+            result[
+                self._result_key(table_name)
+            ] = len(records)
+
+        return result
+
+    @staticmethod
+    def _prepare_revenue(
+        pedidos: pd.DataFrame,
+    ) -> pd.DataFrame:
+
+        if pedidos is None or pedidos.empty:
+            raise ValueError(
+                "A base de pedidos comerciais está vazia."
+            )
+
+        revenue = pedidos.copy()
+
+        if "Data" not in revenue.columns:
+            raise KeyError(
+                "A coluna Data não existe na base de pedidos."
+            )
+
+        revenue["Data"] = pd.to_datetime(
+            revenue["Data"],
+            errors="coerce",
+        )
+
+        revenue = revenue[
+            revenue["Data"].notna()
+        ].copy()
+
+        if revenue.empty:
+            raise ValueError(
+                "Nenhuma data válida foi encontrada "
+                "na base de pedidos."
+            )
+
+        if "ano" not in revenue.columns:
+            revenue["ano"] = (
+                revenue["Data"].dt.year
+            )
+
+        if "mes" not in revenue.columns:
+            revenue["mes"] = (
+                revenue["Data"].dt.month
+            )
+
+        revenue["ano"] = pd.to_numeric(
+            revenue["ano"],
+            errors="coerce",
+        )
+
+        revenue["mes"] = pd.to_numeric(
+            revenue["mes"],
+            errors="coerce",
+        )
+
+        revenue = revenue[
+            revenue["ano"].notna()
+            & revenue["mes"].notna()
+        ].copy()
+
+        revenue["ano"] = (
+            revenue["ano"].astype(int)
+        )
+
+        revenue["mes"] = (
+            revenue["mes"].astype(int)
+        )
+
+        if "ano_mes" not in revenue.columns:
+            revenue["ano_mes"] = (
+                revenue["ano"].astype(str)
+                + "-"
+                + revenue["mes"]
+                .astype(str)
+                .str.zfill(2)
+            )
+
+        return revenue
+
+    @staticmethod
+    def _resolve_projection_base_year(
+        yearly: pd.DataFrame,
+        reference_date: date,
+    ) -> int:
+        """
+        Prioriza o último ano completo.
+
+        Caso não exista a coluna ano_completo ou nenhum ano
+        esteja marcado como completo, utiliza o ano anterior
+        ao ano de referência, desde que exista na base.
+        """
+
+        if yearly is None or yearly.empty:
+            raise ValueError(
+                "O histórico anual está vazio."
+            )
+
+        years = (
+            pd.to_numeric(
+                yearly["ano"],
+                errors="coerce",
+            )
+            .dropna()
+            .astype(int)
+        )
+
+        if years.empty:
+            raise ValueError(
+                "Nenhum ano válido foi encontrado "
+                "no histórico anual."
+            )
+
+        if "ano_completo" in yearly.columns:
+            complete_mask = (
+                yearly["ano_completo"]
+                .fillna(False)
+                .astype(bool)
+            )
+
+            complete_years = (
+                pd.to_numeric(
+                    yearly.loc[
+                        complete_mask,
+                        "ano",
+                    ],
+                    errors="coerce",
+                )
+                .dropna()
+                .astype(int)
+            )
+
+            if not complete_years.empty:
+                return int(
+                    complete_years.max()
+                )
+
+        previous_year = (
+            reference_date.year - 1
+        )
+
+        if previous_year in set(years.tolist()):
+            return previous_year
+
+        return int(years.max())
+
+    def _prepare_records(
+        self,
+        dataframe: pd.DataFrame,
+        table_name: str,
+        reference_date: date,
+    ) -> list[dict[str, Any]]:
+
+        if dataframe is None:
+            return []
+
+        df = dataframe.copy()
+
+        df = df.rename(
+            columns=self.COLUMN_ALIASES
+        )
+
+        df["reference_date"] = (
+            reference_date.isoformat()
+        )
+
+        expected_columns = (
+            self.TABLE_COLUMNS[table_name]
+        )
+
+        for column in expected_columns:
+            if column not in df.columns:
+                df[column] = None
+
+        df = df[expected_columns].copy()
+
+        for column in self.INTEGER_COLUMNS:
+            if column not in df.columns:
+                continue
+
+            numeric_values = pd.to_numeric(
+                df[column],
+                errors="coerce",
+            )
+
+            df[column] = numeric_values.apply(
+                lambda value: (
+                    int(value)
+                    if pd.notna(value)
+                    else None
+                )
+            )
+
+        records = df.to_dict(
+            orient="records"
+        )
+
+        return [
+            {
+                key: self._prepare_value(
+                    column=key,
+                    value=value,
+                )
+                for key, value in record.items()
+            }
+            for record in records
+        ]
+
+    def _prepare_value(
+        self,
+        column: str,
+        value: Any,
+    ) -> Any:
+        """
+        Converte valores conforme o contrato do Supabase.
+
+        A conversão é feita depois do DataFrame virar
+        dicionário, evitando que o pandas transforme
+        inteiros com valores nulos novamente em float.
+        """
+
+        if value is None:
+            return None
+
+        try:
+            if pd.isna(value):
+                return None
+        except (TypeError, ValueError):
+            pass
+
+        if column in self.INTEGER_COLUMNS:
+            try:
+                numeric_value = float(value)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"Valor inválido para coluna inteira "
+                    f"'{column}': {value!r}"
+                ) from exc
+
+            if not numeric_value.is_integer():
+                raise ValueError(
+                    f"Valor decimal encontrado na coluna "
+                    f"inteira '{column}': {value!r}"
+                )
+
+            return int(numeric_value)
+
+        return self._to_native(value)
+
+    @staticmethod
+    def _to_native(
+        value: Any,
+    ) -> Any:
+
+        if value is None:
+            return None
+
+        try:
+            if pd.isna(value):
+                return None
+        except (TypeError, ValueError):
+            pass
+
+        if isinstance(
+            value,
+            (
+                pd.Timestamp,
+                datetime,
+                date,
+            ),
+        ):
+            return value.isoformat()
+
+        if isinstance(value, np.bool_):
+            return bool(value)
+
+        if isinstance(value, np.integer):
+            return int(value)
+
+        if isinstance(value, np.floating):
+            return float(value)
+
+        if isinstance(value, np.ndarray):
+            return value.tolist()
+
+        return value
+
+    def _validate_integer_records(
+        self,
+        table_name: str,
+        records: list[dict[str, Any]],
+    ) -> None:
+        """
+        Impede o envio de strings ou decimais para colunas
+        declaradas como inteiras.
+        """
+
+        for row_index, record in enumerate(records):
+            for column in self.INTEGER_COLUMNS:
+
+                if column not in record:
+                    continue
+
+                value = record[column]
+
+                if value is None:
+                    continue
+
+                if isinstance(value, bool):
+                    raise TypeError(
+                        f"{table_name}: coluna inteira "
+                        f"'{column}' recebeu booleano "
+                        f"na linha {row_index}: {value!r}"
+                    )
+
+                if not isinstance(value, int):
+                    raise TypeError(
+                        f"{table_name}: coluna inteira "
+                        f"'{column}' recebeu "
+                        f"{type(value).__name__} "
+                        f"na linha {row_index}: {value!r}"
+                    )
+
+    @staticmethod
+    def _result_key(
+        table_name: str,
+    ) -> str:
+        return (
+            table_name
+            .removeprefix("mart_")
+            + "_records"
+        )

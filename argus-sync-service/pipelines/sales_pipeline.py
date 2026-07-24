@@ -9,7 +9,9 @@ from transformers.pedido_transformer import PedidoTransformer
 from pipelines.sales_mart_pipeline import SalesMartPipeline
 from pipelines.commercial_intelligence_pipeline import CommercialIntelligencePipeline
 from pipelines.sales_history_pipeline import SalesHistoryPipeline
-
+from pipelines.revenue_intelligence_pipeline import (
+    RevenueIntelligencePipeline,
+)
 
 class SalesPipeline:
 
@@ -30,6 +32,13 @@ class SalesPipeline:
         sales_marts = SalesMartPipeline(self.supabase)
         intelligence = CommercialIntelligencePipeline(self.supabase)
         history_result = SalesHistoryPipeline(self.supabase).run(pedidos)
+
+        revenue_result = RevenueIntelligencePipeline(
+            sql_connector=self.sql_connector,
+            supabase_connector=self.supabase,
+        ).run(
+            pedidos=pedidos
+        )
 
         current_month_result = None
         current_month_intelligence = None
@@ -96,5 +105,6 @@ class SalesPipeline:
             "categories": len(current_month_result["category_df"]),
             "periods_generated": len(period_results),
             **history_result,
+            **revenue_result,
             **current_month_intelligence
         }
