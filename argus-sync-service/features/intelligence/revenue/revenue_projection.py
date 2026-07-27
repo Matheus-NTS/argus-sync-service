@@ -33,6 +33,11 @@ class RevenueProjection:
         12: "Dezembro",
     }
 
+    COMPANY_COLUMN_CANDIDATES = (
+        "empresa",
+        "Empresa",
+    )
+
     def __init__(
         self,
         scenarios=None,
@@ -170,6 +175,134 @@ class RevenueProjection:
 
         return projection
 
+    def build_company_monthly(
+        self,
+        revenue_df: pd.DataFrame,
+        base_year: int,
+    ) -> pd.DataFrame:
+        """
+        Gera a projeção mensal por empresa sem alterar a
+        regra do cenário consolidado.
+        """
+        company_column = self._resolve_company_column(
+            revenue_df
+        )
+
+        if company_column is None:
+            raise KeyError(
+                "A base de faturamento não possui coluna "
+                "de empresa."
+            )
+
+        frames = []
+
+        companies = (
+            revenue_df[company_column]
+            .dropna()
+            .astype(str)
+            .str.strip()
+        )
+
+        for company in sorted(
+            value
+            for value in companies.unique()
+            if value
+        ):
+            company_revenue = revenue_df[
+                revenue_df[company_column]
+                .astype(str)
+                .str.strip()
+                .eq(company)
+            ].copy()
+
+            try:
+                company_projection = self.build(
+                    revenue_df=company_revenue,
+                    base_year=base_year,
+                )
+            except ValueError:
+                # Empresa sem histórico no ano-base.
+                continue
+
+            company_projection["empresa"] = company
+            company_projection["nivel"] = "empresa"
+
+            frames.append(
+                 self.build_long_format(
+                     company_projection
+                 )
+            )
+
+        if not frames:
+            return pd.DataFrame()
+
+        return pd.concat(
+            frames,
+            ignore_index=True,
+        )
+
+    def build_company_summary(
+        self,
+        revenue_df: pd.DataFrame,
+        base_year: int,
+    ) -> pd.DataFrame:
+        company_column = self._resolve_company_column(
+            revenue_df
+        )
+
+        if company_column is None:
+            raise KeyError(
+                "A base de faturamento não possui coluna "
+                "de empresa."
+            )
+
+        frames = []
+
+        companies = (
+            revenue_df[company_column]
+            .dropna()
+            .astype(str)
+            .str.strip()
+        )
+
+        for company in sorted(
+            value
+            for value in companies.unique()
+            if value
+        ):
+            company_revenue = revenue_df[
+                revenue_df[company_column]
+                .astype(str)
+                .str.strip()
+                .eq(company)
+            ].copy()
+
+            try:
+                company_projection = self.build(
+                    revenue_df=company_revenue,
+                    base_year=base_year,
+                )
+            except ValueError:
+                # Empresa sem histórico no ano-base.
+                continue
+
+            company_summary = self.build_summary(
+                company_projection
+            )
+
+            company_summary["empresa"] = company
+            company_summary["nivel"] = "empresa"
+
+            frames.append(company_summary)
+
+        if not frames:
+            return pd.DataFrame()
+
+        return pd.concat(
+            frames,
+            ignore_index=True,
+        )
+
     def build_summary(
         self,
         projection_df: pd.DataFrame,
@@ -193,7 +326,7 @@ class RevenueProjection:
                 projection_df[projection_column].sum()
             )
 
-            records.append({
+            record = {
                 "ano_base": int(
                     projection_df["ano_base"].iloc[0]
                 ),
@@ -218,7 +351,20 @@ class RevenueProjection:
                     projected_revenue / 12,
                     2,
                 ),
-            })
+            }
+
+            if "empresa" in projection_df.columns:
+                record["empresa"] = (
+                    projection_df["empresa"].iloc[0]
+                )
+                record["nivel"] = (
+                    projection_df.get(
+                        "nivel",
+                        pd.Series(["empresa"]),
+                    ).iloc[0]
+                )
+
+            records.append(record)
 
         return pd.DataFrame(records)
 
@@ -226,19 +372,13 @@ class RevenueProjection:
         self,
         projection_df: pd.DataFrame,
     ) -> pd.DataFrame:
-        """
-        Retorna uma linha por mês e cenário.
-
-        Esse formato será o mais adequado para gravação
-        futura no Supabase.
-        """
         records = []
 
         for _, row in projection_df.iterrows():
             for scenario in self.scenarios:
                 suffix = self._scenario_suffix(scenario)
 
-                records.append({
+                record = {
                     "ano_base": int(row["ano_base"]),
                     "ano_projetado": int(
                         row["ano_projetado"]
@@ -268,9 +408,29 @@ class RevenueProjection:
                         ),
                         2,
                     ),
-                })
+                }
+
+                if "empresa" in projection_df.columns:
+                    record["empresa"] = row["empresa"]
+                    record["nivel"] = row.get(
+                        "nivel",
+                        "empresa",
+                    )
+
+                records.append(record)
 
         return pd.DataFrame(records)
+
+    @classmethod
+    def _resolve_company_column(
+        cls,
+        dataframe: pd.DataFrame,
+    ) -> str | None:
+        for column in cls.COMPANY_COLUMN_CANDIDATES:
+            if column in dataframe.columns:
+                return column
+
+        return None
 
     @staticmethod
     def _scenario_suffix(

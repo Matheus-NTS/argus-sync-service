@@ -32,6 +32,26 @@ class RevenueIntelligencePipeline:
     """
 
     TABLE_COLUMNS = {
+        "mart_revenue_daily": [
+            "reference_date",
+            "data",
+            "ano",
+            "mes",
+            "dia",
+            "ano_mes",
+            "empresa",
+            "nivel",
+            "faturamento",
+            "faturamento_acumulado",
+            "meta_mensal",
+            "meta_diaria",
+            "meta_acumulada",
+            "atingimento_meta_acumulada",
+            "gap_acumulado",
+            "dia_util",
+            "dia_util_numero",
+            "dias_uteis_mes",
+        ],
         "mart_revenue_monthly": [
             "reference_date",
             "ano",
@@ -222,6 +242,32 @@ class RevenueIntelligencePipeline:
             "crescimento_valor",
             "media_mensal_projetada",
         ],
+        "mart_revenue_projection_company_monthly": [
+            "reference_date",
+            "empresa",
+            "nivel",
+            "ano_base",
+            "ano_projetado",
+            "mes",
+            "mes_nome",
+            "cenario_percentual",
+            "faturamento_base",
+            "participacao_ano_base",
+            "faturamento_projetado",
+            "crescimento_valor",
+        ],
+        "mart_revenue_projection_company_summary": [
+            "reference_date",
+            "empresa",
+            "nivel",
+            "ano_base",
+            "ano_projetado",
+            "cenario_percentual",
+            "faturamento_ano_base",
+            "faturamento_projetado",
+            "crescimento_valor",
+            "media_mensal_projetada",
+        ],
     }
 
     COLUMN_ALIASES = {
@@ -271,6 +317,8 @@ class RevenueIntelligencePipeline:
         "pedidos_ytd",
         "ano_base",
         "ano_projetado",
+        "dia",
+        "dia_util_numero",
     }
 
     def __init__(
@@ -305,11 +353,19 @@ class RevenueIntelligencePipeline:
             revenue
         )
 
-        daily = RevenueDaily(
+        daily_service = RevenueDaily(
             revenue_df=revenue,
             meta_df=metas.general_monthly,
+            company_meta_df=getattr(
+                metas,
+                "company_monthly",
+                None,
+            ),
             reference_date=reference_date,
-        ).build()
+        )
+
+        daily = daily_service.build()
+        daily_mart = daily_service.build_mart()
 
         overview = RevenueOverview(
             reference_date=reference_date,
@@ -345,7 +401,22 @@ class RevenueIntelligencePipeline:
             )
         )
 
+        projection_company_monthly = (
+            projection_service.build_company_monthly(
+                revenue_df=revenue,
+                base_year=base_year,
+            )
+        )
+
+        projection_company_summary = (
+            projection_service.build_company_summary(
+                revenue_df=revenue,
+                base_year=base_year,
+            )
+        )
+
         datasets = {
+            "mart_revenue_daily": daily_mart,
             "mart_revenue_monthly": overview.monthly,
             "mart_revenue_company_monthly": (
                 overview.company_monthly
@@ -363,6 +434,12 @@ class RevenueIntelligencePipeline:
             ),
             "mart_revenue_projection_summary": (
                 projection_summary
+            ),
+            "mart_revenue_projection_company_monthly": (
+                projection_company_monthly
+            ),
+            "mart_revenue_projection_company_summary": (
+                projection_company_summary
             ),
         }
 

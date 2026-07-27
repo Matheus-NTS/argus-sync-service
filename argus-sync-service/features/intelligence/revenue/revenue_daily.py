@@ -32,17 +32,10 @@ class RevenueDailyResult:
 
 class RevenueDaily:
     """
-    Calcula os indicadores temporais do módulo Revenue.
+    Calcula os indicadores temporais do módulo Revenue e
+    publica a série diária oficial para consumo do frontend.
 
-    Responsabilidades:
-    - faturamento realizado na data de referência;
-    - faturamento acumulado do mês;
-    - distribuição da meta pelos dias úteis;
-    - ritmo médio realizado;
-    - ritmo necessário para atingir a meta;
-    - projeção de fechamento mantendo o ritmo atual.
-
-    A classe recebe a base oficial já filtrada pelo pipeline.
+    A classe recebe a base comercial já filtrada pelo pipeline.
     Ela não reaplica regras comerciais.
     """
 
@@ -54,15 +47,22 @@ class RevenueDaily:
         "partial",
     }
 
+    COMPANY_COLUMN_CANDIDATES = (
+        "empresa",
+        "Empresa",
+    )
+
     def __init__(
         self,
         revenue_df: pd.DataFrame,
         meta_df: pd.DataFrame,
         reference_date: date | datetime | pd.Timestamp | str,
         calendar: BusinessCalendar | None = None,
+        company_meta_df: pd.DataFrame | None = None,
     ) -> None:
         self.revenue_df = revenue_df
         self.meta_df = meta_df
+        self.company_meta_df = company_meta_df
         self.reference_date = self._normalize_date(
             reference_date
         )
@@ -72,7 +72,11 @@ class RevenueDaily:
 
     def build(self) -> RevenueDailyResult:
         revenue = self._prepare_revenue()
-        meta_mensal = self._resolve_monthly_meta()
+        meta_mensal = self._resolve_monthly_meta(
+            meta_df=self.meta_df,
+            year=self.reference_date.year,
+            month=self.reference_date.month,
+        )
 
         calendar_summary = (
             self.calendar.month_summary(
@@ -161,6 +165,343 @@ class RevenueDaily:
             ),
         )
 
+    def build_mart(self) -> pd.DataFrame:
+        """
+        Cria a série diária consolidada e por empresa.
+
+        O calendário útil é obtido pelo BusinessCalendar.
+        Para identificar se uma data é útil sem duplicar regra,
+        compara-se o contador de dias úteis decorridos do próprio
+        calendário entre a data atual e a data anterior.
+        """
+        revenue = self._prepare_revenue()
+
+        if revenue.empty:
+            return pd.DataFrame()
+
+        company_column = self._resolve_company_column(
+            revenue
+        )
+
+        start_date = (
+            revenue[self.REVENUE_DATE_COLUMN]
+            .min()
+            .date()
+        )
+
+        date_dimension = pd.DataFrame({
+            "data": pd.date_range(
+                start=start_date,
+                end=self.reference_date,
+                freq="D",
+            )
+        })
+
+        consolidated = self._build_daily_level(
+            revenue=revenue,
+            date_dimension=date_dimension,
+            meta_df=self.meta_df,
+            empresa="Consolidado NTS",
+            nivel="consolidado",
+        )
+
+        frames = [consolidated]
+
+        if company_column is not None:
+            companies = (
+                revenue[company_column]
+                .dropna()
+                .astype(str)
+                .str.strip()
+            )
+            companies = sorted(
+                company
+                for company in companies.unique()
+                if company
+            )
+
+            company_meta = (
+                self.company_meta_df
+                if self.company_meta_df is not None
+                else pd.DataFrame()
+            )
+
+            for company in companies:
+                company_revenue = revenue[
+                    revenue[company_column]
+                    .astype(str)
+                    .str.strip()
+                    .eq(company)
+                ].copy()
+
+                frames.append(
+                    self._build_daily_level(
+                        revenue=company_revenue,
+                        date_dimension=date_dimension,
+                        meta_df=company_meta,
+                        empresa=company,
+                        nivel="empresa",
+                    )
+                )
+
+        result = pd.concat(
+            frames,
+            ignore_index=True,
+        )
+
+        result = result.sort_values(
+            ["nivel", "empresa", "data"],
+            kind="stable",
+        ).reset_index(drop=True)
+
+        return result
+
+    def _build_daily_level(
+        self,
+        revenue: pd.DataFrame,
+        date_dimension: pd.DataFrame,
+        meta_df: pd.DataFrame,
+        empresa: str,
+        nivel: str,
+    ) -> pd.DataFrame:
+        daily_revenue = (
+            revenue
+            .assign(
+                data=revenue[
+                    self.REVENUE_DATE_COLUMN
+                ].dt.normalize()
+            )
+            .groupby(
+                "data",
+                as_index=False,
+            )
+            .agg(
+                faturamento=(
+                    self.REVENUE_VALUE_COLUMN,
+                    "sum",
+                )
+            )
+        )
+
+        result = date_dimension.merge(
+            daily_revenue,
+            on="data",
+            how="left",
+        )
+
+        result["faturamento"] = (
+            pd.to_numeric(
+                result["faturamento"],
+                errors="coerce",
+            )
+            .fillna(0.0)
+            .round(2)
+        )
+
+        result["ano"] = result["data"].dt.year
+        result["mes"] = result["data"].dt.month
+        result["dia"] = result["data"].dt.day
+        result["ano_mes"] = (
+            result["ano"].astype(str)
+            + "-"
+            + result["mes"].astype(str).str.zfill(2)
+        )
+        result["empresa"] = empresa
+        result["nivel"] = nivel
+
+        calendar_rows = [
+            self._calendar_day_attributes(
+                pd.Timestamp(current_date).date()
+            )
+            for current_date in result["data"]
+        ]
+
+        calendar_df = pd.DataFrame(calendar_rows)
+
+        result["dia_util"] = calendar_df[
+            "dia_util"
+        ].values
+        result["dia_util_numero"] = calendar_df[
+            "dia_util_numero"
+        ].values
+        result["dias_uteis_mes"] = calendar_df[
+            "dias_uteis_mes"
+        ].values
+
+        result["faturamento_acumulado"] = (
+            result
+            .groupby(
+                ["ano", "mes"],
+                sort=False,
+            )["faturamento"]
+            .cumsum()
+            .round(2)
+        )
+
+        target_records = []
+
+        for (year, month), month_group in result.groupby(
+            ["ano", "mes"],
+            sort=False,
+        ):
+            monthly_target = self._resolve_monthly_meta(
+                meta_df=meta_df,
+                year=int(year),
+                month=int(month),
+                empresa=(
+                    empresa
+                    if nivel == "empresa"
+                    else None
+                ),
+            )
+
+            business_days_month = int(
+                month_group[
+                    "dias_uteis_mes"
+                ].max()
+            )
+
+            daily_target = self._calculate_daily_target(
+                meta_mensal=monthly_target,
+                business_days_month=business_days_month,
+            )
+
+            for index in month_group.index:
+                business_day_number = int(
+                    result.at[
+                        index,
+                        "dia_util_numero",
+                    ]
+                )
+
+                accumulated_target = (
+                    None
+                    if daily_target is None
+                    else self._round_money(
+                        daily_target
+                        * business_day_number
+                    )
+                )
+
+                accumulated_revenue = float(
+                    result.at[
+                        index,
+                        "faturamento_acumulado",
+                    ]
+                )
+
+                achievement = (
+                    None
+                    if (
+                        accumulated_target is None
+                        or accumulated_target <= 0
+                    )
+                    else round(
+                        accumulated_revenue
+                        / accumulated_target,
+                        6,
+                    )
+                )
+
+                gap = (
+                    None
+                    if accumulated_target is None
+                    else self._round_money(
+                        accumulated_revenue
+                        - accumulated_target
+                    )
+                )
+
+                target_records.append({
+                    "index": index,
+                    "meta_mensal": monthly_target,
+                    "meta_diaria": daily_target,
+                    "meta_acumulada": accumulated_target,
+                    "atingimento_meta_acumulada": achievement,
+                    "gap_acumulado": gap,
+                })
+
+        targets = (
+            pd.DataFrame(target_records)
+            .set_index("index")
+        )
+
+        for column in [
+            "meta_mensal",
+            "meta_diaria",
+            "meta_acumulada",
+            "atingimento_meta_acumulada",
+            "gap_acumulado",
+        ]:
+            result[column] = targets[column]
+
+        result["data"] = (
+            result["data"].dt.date
+        )
+
+        return result[[
+            "data",
+            "ano",
+            "mes",
+            "dia",
+            "ano_mes",
+            "empresa",
+            "nivel",
+            "faturamento",
+            "faturamento_acumulado",
+            "meta_mensal",
+            "meta_diaria",
+            "meta_acumulada",
+            "atingimento_meta_acumulada",
+            "gap_acumulado",
+            "dia_util",
+            "dia_util_numero",
+            "dias_uteis_mes",
+        ]].copy()
+
+    def _calendar_day_attributes(
+        self,
+        current_date: date,
+    ) -> dict:
+        current_summary = self.calendar.month_summary(
+            current_date
+        )
+
+        if current_date.day == 1:
+            previous_elapsed = 0
+        else:
+            previous_date = (
+                pd.Timestamp(current_date)
+                - pd.Timedelta(days=1)
+            ).date()
+
+            if previous_date.month != current_date.month:
+                previous_elapsed = 0
+            else:
+                previous_summary = (
+                    self.calendar.month_summary(
+                        previous_date
+                    )
+                )
+                previous_elapsed = (
+                    previous_summary
+                    .dias_uteis_decorridos
+                )
+
+        current_elapsed = (
+            current_summary.dias_uteis_decorridos
+        )
+
+        return {
+            "dia_util": (
+                current_elapsed > previous_elapsed
+            ),
+            "dia_util_numero": current_elapsed,
+            "dias_uteis_mes": (
+                current_summary.dias_uteis_mes
+            ),
+        }
+
     def _prepare_revenue(self) -> pd.DataFrame:
         if self.revenue_df is None:
             raise ValueError(
@@ -213,11 +554,12 @@ class RevenueDaily:
 
     def _resolve_monthly_meta(
         self,
+        meta_df: pd.DataFrame,
+        year: int,
+        month: int,
+        empresa: str | None = None,
     ) -> float | None:
-        if self.meta_df is None:
-            return None
-
-        if self.meta_df.empty:
+        if meta_df is None or meta_df.empty:
             return None
 
         required_columns = {
@@ -228,7 +570,7 @@ class RevenueDaily:
 
         missing_columns = (
             required_columns
-            - set(self.meta_df.columns)
+            - set(meta_df.columns)
         )
 
         if missing_columns:
@@ -240,30 +582,42 @@ class RevenueDaily:
                 )
             )
 
-        metas = self.meta_df.copy()
+        metas = meta_df.copy()
 
         metas["ano"] = pd.to_numeric(
             metas["ano"],
             errors="coerce",
         )
-
         metas["mes"] = pd.to_numeric(
             metas["mes"],
             errors="coerce",
         )
-
         metas["meta"] = pd.to_numeric(
             metas["meta"],
             errors="coerce",
         )
 
         current_meta = metas[
-            (metas["ano"] == self.reference_date.year)
-            & (
-                metas["mes"]
-                == self.reference_date.month
-            )
+            (metas["ano"] == int(year))
+            & (metas["mes"] == int(month))
         ].copy()
+
+        if empresa is not None:
+            meta_company_column = (
+                self._resolve_company_column(
+                    current_meta
+                )
+            )
+
+            if meta_company_column is None:
+                return None
+
+            current_meta = current_meta[
+                current_meta[meta_company_column]
+                .astype(str)
+                .str.strip()
+                .eq(str(empresa).strip())
+            ].copy()
 
         if current_meta.empty:
             return None
@@ -296,6 +650,17 @@ class RevenueDaily:
             return None
 
         return self._round_money(meta_value)
+
+    @classmethod
+    def _resolve_company_column(
+        cls,
+        dataframe: pd.DataFrame,
+    ) -> str | None:
+        for column in cls.COMPANY_COLUMN_CANDIDATES:
+            if column in dataframe.columns:
+                return column
+
+        return None
 
     @classmethod
     def _calculate_daily_target(
