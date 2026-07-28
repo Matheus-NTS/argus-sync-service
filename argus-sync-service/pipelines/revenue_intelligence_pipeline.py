@@ -166,6 +166,8 @@ class RevenueIntelligencePipeline:
         ],
         "mart_revenue_current_summary": [
     "reference_date",
+    "empresa",
+    "nivel",
     "ano",
     "mes",
     "faturamento",
@@ -194,6 +196,8 @@ class RevenueIntelligencePipeline:
 ],
         "mart_revenue_yearly": [
             "reference_date",
+            "empresa",
+            "nivel",
             "ano",
             "faturamento",
             "pedidos",
@@ -213,6 +217,8 @@ class RevenueIntelligencePipeline:
         ],
         "mart_revenue_ytd": [
             "reference_date",
+            "empresa",
+            "nivel",
             "ano",
             "mes_limite",
             "faturamento_ytd",
@@ -375,9 +381,84 @@ class RevenueIntelligencePipeline:
             daily=daily,
         )
 
+        company_monthly_analytics = (
+            self._build_company_monthly_analytics(
+                company_monthly=overview.company_monthly,
+                reference_date=reference_date,
+            )
+        )
+
+        monthly_mart = pd.concat(
+            [
+                overview.monthly.assign(
+                    empresa="Consolidado",
+                    nivel="consolidado",
+                ),
+                company_monthly_analytics,
+            ],
+            ignore_index=True,
+            sort=False,
+        )
+
+        company_yearly = self._build_company_yearly(
+            company_monthly=company_monthly_analytics,
+            reference_date=reference_date,
+        )
+
+        company_ytd = self._build_company_ytd(
+            company_monthly=company_monthly_analytics,
+            reference_date=reference_date,
+        )
+
+        yearly_mart = pd.concat(
+            [
+                history["yearly"].assign(
+                    empresa="Consolidado",
+                    nivel="consolidado",
+                ),
+                company_yearly,
+            ],
+            ignore_index=True,
+            sort=False,
+        )
+
+        ytd_mart = pd.concat(
+            [
+                history["ytd"].assign(
+                    empresa="Consolidado",
+                    nivel="consolidado",
+                ),
+                company_ytd,
+            ],
+            ignore_index=True,
+            sort=False,
+        )
+
+        company_current_summary = (
+            self._build_company_current_summary(
+                company_monthly=company_monthly_analytics,
+                daily_mart=daily_mart,
+                reference_date=reference_date,
+            )
+        )
+
+        current_summary_mart = pd.concat(
+            [
+                overview.current_summary.assign(
+                    empresa="Consolidado",
+                    nivel="consolidado",
+                ),
+                company_current_summary,
+            ],
+            ignore_index=True,
+            sort=False,
+        )
+
         # O bloco abaixo permanece pronto para a próxima etapa.
         # Ele será alcançado após removermos o SystemExit temporário.
-        projection_service = RevenueProjection()
+        projection_service = RevenueProjection(
+            reference_date=reference_date,
+        )
 
         base_year = self._resolve_projection_base_year(
             history["yearly"],
@@ -417,7 +498,7 @@ class RevenueIntelligencePipeline:
 
         datasets = {
             "mart_revenue_daily": daily_mart,
-            "mart_revenue_monthly": overview.monthly,
+            "mart_revenue_monthly": monthly_mart,
             "mart_revenue_company_monthly": (
                 overview.company_monthly
             ),
@@ -425,10 +506,10 @@ class RevenueIntelligencePipeline:
                 overview.seller_monthly
             ),
             "mart_revenue_current_summary": (
-                overview.current_summary
+                current_summary_mart
             ),
-            "mart_revenue_yearly": history["yearly"],
-            "mart_revenue_ytd": history["ytd"],
+            "mart_revenue_yearly": yearly_mart,
+            "mart_revenue_ytd": ytd_mart,
             "mart_revenue_projection_monthly": (
                 projection_monthly
             ),
@@ -549,22 +630,428 @@ class RevenueIntelligencePipeline:
 
         return revenue
 
+
+    @staticmethod
+    def _build_company_monthly_analytics(
+        company_monthly: pd.DataFrame,
+        reference_date: date,
+    ) -> pd.DataFrame:
+        """
+        Enriquece o histórico mensal por empresa com comparações
+        MoM, YoY e acumulado YTD. Todos os cálculos permanecem
+        no backend.
+        """
+        if company_monthly is None or company_monthly.empty:
+            return pd.DataFrame()
+
+        df = company_monthly.copy()
+        required = {"empresa", "ano", "mes", "faturamento", "pedidos"}
+        missing = required.difference(df.columns)
+        if missing:
+            raise KeyError(
+                "mart_revenue_company_monthly sem colunas: "
+                + ", ".join(sorted(missing))
+            )
+
+        df["ano"] = pd.to_numeric(df["ano"], errors="coerce")
+        df["mes"] = pd.to_numeric(df["mes"], errors="coerce")
+        df["faturamento"] = pd.to_numeric(
+            df["faturamento"], errors="coerce"
+        ).fillna(0.0)
+        df["pedidos"] = pd.to_numeric(
+            df["pedidos"], errors="coerce"
+        ).fillna(0)
+
+        df = df[df["ano"].notna() & df["mes"].notna()].copy()
+        df["ano"] = df["ano"].astype(int)
+        df["mes"] = df["mes"].astype(int)
+        df["empresa"] = df["empresa"].astype(str).str.strip()
+        df["nivel"] = "empresa"
+        df["ano_mes"] = (
+            df["ano"].astype(str)
+            + "-"
+            + df["mes"].astype(str).str.zfill(2)
+        )
+
+        month_names = {
+            1: "Janeiro", 2: "Fevereiro", 3: "Março",
+            4: "Abril", 5: "Maio", 6: "Junho",
+            7: "Julho", 8: "Agosto", 9: "Setembro",
+            10: "Outubro", 11: "Novembro", 12: "Dezembro",
+        }
+        df["mes_nome"] = df["mes"].map(month_names)
+        df["trimestre"] = ((df["mes"] - 1) // 3) + 1
+        df["semestre"] = ((df["mes"] - 1) // 6) + 1
+        df["tem_movimento"] = df["faturamento"] != 0
+        df["periodo_futuro"] = (
+            (df["ano"] > reference_date.year)
+            | (
+                (df["ano"] == reference_date.year)
+                & (df["mes"] > reference_date.month)
+            )
+        )
+        df["mes_em_aberto"] = (
+            (df["ano"] == reference_date.year)
+            & (df["mes"] == reference_date.month)
+        )
+
+        df = df.sort_values(
+            ["empresa", "ano", "mes"]
+        ).reset_index(drop=True)
+
+        df["faturamento_mes_anterior"] = (
+            df.groupby("empresa")["faturamento"].shift(1).fillna(0.0)
+        )
+        previous = df["faturamento_mes_anterior"]
+        df["crescimento_mom"] = np.where(
+            previous != 0,
+            (df["faturamento"] / previous) - 1,
+            np.nan,
+        )
+
+        previous_year = df[
+            ["empresa", "ano", "mes", "faturamento"]
+        ].copy()
+        previous_year["ano"] = previous_year["ano"] + 1
+        previous_year = previous_year.rename(
+            columns={"faturamento": "faturamento_ano_anterior"}
+        )
+
+        df = df.merge(
+            previous_year,
+            on=["empresa", "ano", "mes"],
+            how="left",
+        )
+        df["faturamento_ano_anterior"] = (
+            pd.to_numeric(
+                df["faturamento_ano_anterior"],
+                errors="coerce",
+            ).fillna(0.0)
+        )
+        df["crescimento_yoy"] = np.where(
+            df["faturamento_ano_anterior"] != 0,
+            (
+                df["faturamento"]
+                / df["faturamento_ano_anterior"]
+            ) - 1,
+            np.nan,
+        )
+        df["acumulado_ytd"] = (
+            df.groupby(["empresa", "ano"])["faturamento"].cumsum()
+        )
+
+        for column, default in {
+            "empresas_ativas": 1,
+            "empresas_com_meta": 1,
+        }.items():
+            df[column] = default
+
+        for column in [
+            "vendedores_cadastrados_meta",
+            "vendedores_com_meta",
+            "vendedores_pendentes",
+        ]:
+            if column not in df.columns:
+                df[column] = 0
+
+        return df
+
+    @staticmethod
+    def _build_company_yearly(
+        company_monthly: pd.DataFrame,
+        reference_date: date,
+    ) -> pd.DataFrame:
+        if company_monthly is None or company_monthly.empty:
+            return pd.DataFrame()
+
+        source = company_monthly[
+            ~company_monthly["periodo_futuro"].fillna(False)
+        ].copy()
+
+        rows: list[dict[str, Any]] = []
+        month_names = {
+            1: "Janeiro", 2: "Fevereiro", 3: "Março",
+            4: "Abril", 5: "Maio", 6: "Junho",
+            7: "Julho", 8: "Agosto", 9: "Setembro",
+            10: "Outubro", 11: "Novembro", 12: "Dezembro",
+        }
+
+        for (empresa, ano), group in source.groupby(
+            ["empresa", "ano"], dropna=False
+        ):
+            group = group.sort_values("mes")
+            moving = group[group["tem_movimento"].fillna(False)]
+            faturamento = float(group["faturamento"].sum())
+            pedidos = int(group["pedidos"].sum())
+            ticket = faturamento / pedidos if pedidos else 0.0
+
+            if moving.empty:
+                best = worst = group.iloc[0]
+            else:
+                best = moving.loc[moving["faturamento"].idxmax()]
+                worst = moving.loc[moving["faturamento"].idxmin()]
+
+            rows.append({
+                "empresa": empresa,
+                "nivel": "empresa",
+                "ano": int(ano),
+                "faturamento": faturamento,
+                "pedidos": pedidos,
+                "meses_com_movimento": int(
+                    moving["mes"].nunique()
+                ),
+                "ticket_medio": ticket,
+                "media_mensal": (
+                    faturamento / max(int(group["mes"].nunique()), 1)
+                ),
+                "melhor_mes": int(best["mes"]),
+                "melhor_mes_nome": month_names.get(
+                    int(best["mes"]), str(best["mes"])
+                ),
+                "melhor_mes_faturamento": float(best["faturamento"]),
+                "pior_mes": int(worst["mes"]),
+                "pior_mes_nome": month_names.get(
+                    int(worst["mes"]), str(worst["mes"])
+                ),
+                "pior_mes_faturamento": float(worst["faturamento"]),
+                "ano_completo": (
+                    int(ano) < reference_date.year
+                    and int(group["mes"].nunique()) >= 12
+                ),
+            })
+
+        yearly = pd.DataFrame(rows).sort_values(
+            ["empresa", "ano"]
+        ).reset_index(drop=True)
+
+        previous = yearly[
+            ["empresa", "ano", "faturamento", "ano_completo"]
+        ].copy()
+        previous["ano"] = previous["ano"] + 1
+        previous = previous.rename(columns={
+            "faturamento": "faturamento_ano_anterior",
+            "ano_completo": "ano_anterior_completo",
+        })
+
+        yearly = yearly.merge(
+            previous,
+            on=["empresa", "ano"],
+            how="left",
+        )
+        yearly["faturamento_ano_anterior"] = yearly[
+            "faturamento_ano_anterior"
+        ].fillna(0.0)
+        yearly["ano_anterior_completo"] = yearly[
+            "ano_anterior_completo"
+        ].fillna(False)
+        yearly["crescimento_anual"] = np.where(
+            yearly["faturamento_ano_anterior"] != 0,
+            (
+                yearly["faturamento"]
+                / yearly["faturamento_ano_anterior"]
+            ) - 1,
+            np.nan,
+        )
+        return yearly
+
+    @staticmethod
+    def _build_company_ytd(
+        company_monthly: pd.DataFrame,
+        reference_date: date,
+    ) -> pd.DataFrame:
+        if company_monthly is None or company_monthly.empty:
+            return pd.DataFrame()
+
+        rows: list[dict[str, Any]] = []
+        years = sorted(
+            pd.to_numeric(
+                company_monthly["ano"], errors="coerce"
+            ).dropna().astype(int).unique().tolist()
+        )
+
+        for empresa, company_rows in company_monthly.groupby("empresa"):
+            for ano in years:
+                year_rows = company_rows[company_rows["ano"] == ano]
+                if year_rows.empty:
+                    continue
+
+                mes_limite = (
+                    reference_date.month
+                    if ano == reference_date.year
+                    else 12
+                )
+                current = year_rows[
+                    year_rows["mes"] <= mes_limite
+                ]
+                previous = company_rows[
+                    (company_rows["ano"] == ano - 1)
+                    & (company_rows["mes"] <= mes_limite)
+                ]
+
+                current_value = float(current["faturamento"].sum())
+                previous_value = float(previous["faturamento"].sum())
+                current_orders = int(current["pedidos"].sum())
+
+                rows.append({
+                    "empresa": empresa,
+                    "nivel": "empresa",
+                    "ano": int(ano),
+                    "mes_limite": int(mes_limite),
+                    "faturamento_ytd": current_value,
+                    "pedidos_ytd": current_orders,
+                    "faturamento_ytd_ano_anterior": previous_value,
+                    "crescimento_ytd": (
+                        (current_value / previous_value) - 1
+                        if previous_value != 0
+                        else np.nan
+                    ),
+                })
+
+        return pd.DataFrame(rows)
+
+    @staticmethod
+    def _build_company_current_summary(
+        company_monthly: pd.DataFrame,
+        daily_mart: pd.DataFrame,
+        reference_date: date,
+    ) -> pd.DataFrame:
+        if company_monthly is None or company_monthly.empty:
+            return pd.DataFrame()
+
+        current = company_monthly[
+            (company_monthly["ano"] == reference_date.year)
+            & (company_monthly["mes"] == reference_date.month)
+        ].copy()
+
+        if current.empty:
+            return pd.DataFrame()
+
+        daily = daily_mart.copy() if daily_mart is not None else pd.DataFrame()
+        rows: list[dict[str, Any]] = []
+
+        for _, monthly in current.iterrows():
+            empresa = str(monthly["empresa"])
+            company_daily = (
+                daily[
+                    (daily["empresa"].astype(str) == empresa)
+                    & (daily["ano"] == reference_date.year)
+                    & (daily["mes"] == reference_date.month)
+                ].sort_values("data")
+                if not daily.empty
+                else pd.DataFrame()
+            )
+
+            faturamento = float(monthly.get("faturamento", 0) or 0)
+            meta = float(monthly.get("meta", 0) or 0)
+            faturamento_dia = 0.0
+
+            if not company_daily.empty:
+                today_rows = company_daily[
+                    company_daily["data"].astype(str)
+                    == reference_date.isoformat()
+                ]
+                if not today_rows.empty:
+                    faturamento_dia = float(
+                        today_rows["faturamento"].sum()
+                    )
+
+                latest = company_daily.iloc[-1]
+                dias_uteis_mes = int(
+                    latest.get("dias_uteis_mes", 0) or 0
+                )
+                dias_uteis_decorridos = int(
+                    latest.get("dia_util_numero", 0) or 0
+                )
+            else:
+                dias_uteis_mes = 0
+                dias_uteis_decorridos = 0
+
+            dias_uteis_restantes = max(
+                dias_uteis_mes - dias_uteis_decorridos, 0
+            )
+            ritmo_atual = (
+                faturamento / dias_uteis_decorridos
+                if dias_uteis_decorridos > 0
+                else 0.0
+            )
+            gap_meta = faturamento - meta if meta > 0 else 0.0
+            ritmo_necessario = (
+                max(meta - faturamento, 0.0)
+                / dias_uteis_restantes
+                if dias_uteis_restantes > 0 and meta > 0
+                else 0.0
+            )
+            projecao = (
+                faturamento
+                + ritmo_atual * dias_uteis_restantes
+            )
+            atingimento = (
+                faturamento / meta if meta > 0 else 0.0
+            )
+
+            rows.append({
+                "empresa": empresa,
+                "nivel": "empresa",
+                "ano": reference_date.year,
+                "mes": reference_date.month,
+                "faturamento": faturamento,
+                "faturamento_dia": faturamento_dia,
+                "meta": meta,
+                "meta_diaria": (
+                    meta / dias_uteis_mes
+                    if dias_uteis_mes > 0
+                    else 0.0
+                ),
+                "supermeta": float(monthly.get("supermeta", 0) or 0),
+                "hipermeta": float(monthly.get("hipermeta", 0) or 0),
+                "atingimento_meta": atingimento,
+                "gap_meta": gap_meta,
+                "ritmo_atual": ritmo_atual,
+                "ritmo_necessario": ritmo_necessario,
+                "dias_uteis_mes": dias_uteis_mes,
+                "dias_uteis_decorridos": dias_uteis_decorridos,
+                "dias_uteis_restantes": dias_uteis_restantes,
+                "projecao_fechamento": projecao,
+                "status_meta": monthly.get("status_meta"),
+                "faixa_desempenho": monthly.get("faixa_desempenho"),
+                "empresas_com_faturamento": 1 if faturamento else 0,
+                "vendedores_com_faturamento": int(
+                    monthly.get("vendedores_ativos", 0) or 0
+                ),
+                "vendedores_com_meta_valida": int(
+                    monthly.get("vendedores_com_meta", 0) or 0
+                ),
+                "vendedores_que_bateram_meta": 0,
+                "vendedores_em_supermeta": 0,
+                "vendedores_em_hipermeta": 0,
+                "status": "available",
+            })
+
+        return pd.DataFrame(rows)
+
     @staticmethod
     def _resolve_projection_base_year(
         yearly: pd.DataFrame,
         reference_date: date,
     ) -> int:
         """
-        Prioriza o último ano completo.
+        Utiliza sempre o ano corrente como base da projeção.
 
-        Caso não exista a coluna ano_completo ou nenhum ano
-        esteja marcado como completo, utiliza o ano anterior
-        ao ano de referência, desde que exista na base.
+        Exemplos:
+        - 2026 -> projeta 2027
+        - 2027 -> projeta 2028
+
+        O ano corrente precisa existir no histórico anual.
         """
 
         if yearly is None or yearly.empty:
             raise ValueError(
                 "O histórico anual está vazio."
+            )
+
+        if "ano" not in yearly.columns:
+            raise KeyError(
+                "A coluna 'ano' não existe no histórico anual."
             )
 
         years = (
@@ -582,34 +1069,15 @@ class RevenueIntelligencePipeline:
                 "no histórico anual."
             )
 
-        if "ano_completo" in yearly.columns:
-            complete_mask = (
-                yearly["ano_completo"]
-                .fillna(False)
-                .astype(bool)
+        current_year = int(reference_date.year)
+
+        if current_year not in set(years.tolist()):
+            raise ValueError(
+                f"O ano corrente {current_year} não possui "
+                "faturamento no histórico anual."
             )
 
-            complete_years = (
-                pd.to_numeric(
-                    yearly.loc[
-                        complete_mask,
-                        "ano",
-                    ],
-                    errors="coerce",
-                )
-                .dropna()
-                .astype(int)
-            )
-
-            if not complete_years.empty:
-                return int(complete_years.max())
-
-        previous_year = reference_date.year - 1
-
-        if previous_year in set(years.tolist()):
-            return previous_year
-
-        return int(years.max())
+        return current_year
 
     def _prepare_records(
         self,
