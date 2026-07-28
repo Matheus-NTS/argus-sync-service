@@ -554,8 +554,7 @@ class ProfitabilityPipeline:
     ):
 
         filters = {
-            "reference_date": reference_date,
-            "period_type": period_type,
+             "period_type": period_type,
         }
 
         self.supabase.replace_snapshot(
