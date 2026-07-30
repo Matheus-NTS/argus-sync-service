@@ -15,7 +15,8 @@ class RevenueHistory:
     - histórico anual consolidado;
     - histórico YTD;
     - histórico mensal por empresa;
-    - histórico mensal por empresa e vendedor.
+    - histórico mensal por empresa e vendedor;
+    - resumo histórico consolidado e por empresa.
 
     Observações:
     - o mesmo número de pedido pode existir em empresas diferentes;
@@ -88,12 +89,19 @@ class RevenueHistory:
             )
         )
 
+        historical_summary = (
+            self.build_historical_summary(
+                revenue
+            )
+        )
+
         return {
             "monthly": monthly,
             "yearly": yearly,
             "ytd": ytd,
             "company_monthly": company_monthly,
             "seller_monthly": seller_monthly,
+            "historical_summary": historical_summary,
         }
 
     def build_monthly(
@@ -987,6 +995,279 @@ class RevenueHistory:
         )
 
         return seller_monthly
+
+    def build_historical_summary(
+        self,
+        revenue_df: pd.DataFrame,
+    ) -> pd.DataFrame:
+        """
+        Gera o resumo histórico acumulado do faturamento.
+
+        O contrato contém:
+        - uma linha consolidada de toda a operação;
+        - uma linha para cada empresa;
+        - faturamento, pedidos e ticket médio históricos;
+        - primeira e última venda;
+        - extensão e cobertura da série;
+        - participação e ranking histórico por empresa.
+
+        Regras:
+        - pedidos são contados pela chave composta
+          Empresa + número do pedido;
+        - a participação das empresas usa o faturamento
+          consolidado como denominador;
+        - o registro consolidado recebe participação 1.0
+          e ranking 0, pois não concorre com as empresas.
+        """
+        revenue = self._prepare_dataframe(
+            revenue_df
+        )
+
+        if revenue.empty:
+            raise ValueError(
+                "A base histórica de faturamento está vazia."
+            )
+
+        total_revenue = float(
+            revenue["Valor_total_Unitario"].sum()
+        )
+
+        total_orders = int(
+            revenue["pedido_chave"].nunique()
+        )
+
+        first_sale = pd.to_datetime(
+            revenue["Data"],
+            errors="coerce",
+        ).min()
+
+        last_sale = pd.to_datetime(
+            revenue["Data"],
+            errors="coerce",
+        ).max()
+
+        consolidated = {
+            "empresa": "Consolidado",
+            "nivel": "consolidado",
+            "faturamento_total": round(
+                total_revenue,
+                2,
+            ),
+            "pedidos_total": total_orders,
+            "ticket_medio": round(
+                (
+                    total_revenue / total_orders
+                    if total_orders > 0
+                    else 0.0
+                ),
+                2,
+            ),
+            "primeira_venda": first_sale,
+            "ultima_venda": last_sale,
+            "dias_historico": int(
+                (last_sale - first_sale).days
+            ),
+            "meses_com_movimento": int(
+                revenue["ano_mes"].nunique()
+            ),
+            "anos_com_movimento": int(
+                revenue["ano"].nunique()
+            ),
+            "primeiro_ano": int(
+                revenue["ano"].min()
+            ),
+            "ultimo_ano": int(
+                revenue["ano"].max()
+            ),
+            "participacao_historica": 1.0,
+            "ranking_historico": 0,
+        }
+
+        company_summary = (
+            revenue
+            .groupby(
+                "Empresa",
+                as_index=False,
+                dropna=False,
+            )
+            .agg(
+                faturamento_total=(
+                    "Valor_total_Unitario",
+                    "sum",
+                ),
+                pedidos_total=(
+                    "pedido_chave",
+                    "nunique",
+                ),
+                primeira_venda=(
+                    "Data",
+                    "min",
+                ),
+                ultima_venda=(
+                    "Data",
+                    "max",
+                ),
+                meses_com_movimento=(
+                    "ano_mes",
+                    "nunique",
+                ),
+                anos_com_movimento=(
+                    "ano",
+                    "nunique",
+                ),
+                primeiro_ano=(
+                    "ano",
+                    "min",
+                ),
+                ultimo_ano=(
+                    "ano",
+                    "max",
+                ),
+            )
+            .rename(
+                columns={
+                    "Empresa": "empresa",
+                }
+            )
+        )
+
+        company_summary["nivel"] = "empresa"
+
+        company_summary["ticket_medio"] = np.where(
+            company_summary["pedidos_total"] > 0,
+            (
+                company_summary["faturamento_total"]
+                / company_summary["pedidos_total"]
+            ),
+            0.0,
+        )
+
+        company_summary["dias_historico"] = (
+            pd.to_datetime(
+                company_summary["ultima_venda"],
+                errors="coerce",
+            )
+            - pd.to_datetime(
+                company_summary["primeira_venda"],
+                errors="coerce",
+            )
+        ).dt.days
+
+        company_summary[
+            "participacao_historica"
+        ] = np.where(
+            total_revenue != 0,
+            (
+                company_summary["faturamento_total"]
+                / total_revenue
+            ),
+            0.0,
+        )
+
+        company_summary = (
+            company_summary
+            .sort_values(
+                [
+                    "faturamento_total",
+                    "empresa",
+                ],
+                ascending=[
+                    False,
+                    True,
+                ],
+            )
+            .reset_index(
+                drop=True
+            )
+        )
+
+        company_summary[
+            "ranking_historico"
+        ] = (
+            company_summary[
+                "faturamento_total"
+            ]
+            .rank(
+                method="dense",
+                ascending=False,
+            )
+            .astype(int)
+        )
+
+        monetary_columns = [
+            "faturamento_total",
+            "ticket_medio",
+        ]
+
+        company_summary[monetary_columns] = (
+            company_summary[monetary_columns]
+            .astype(float)
+            .round(2)
+        )
+
+        company_summary[
+            "participacao_historica"
+        ] = (
+            company_summary[
+                "participacao_historica"
+            ]
+            .astype(float)
+            .round(6)
+        )
+
+        integer_columns = [
+            "pedidos_total",
+            "dias_historico",
+            "meses_com_movimento",
+            "anos_com_movimento",
+            "primeiro_ano",
+            "ultimo_ano",
+            "ranking_historico",
+        ]
+
+        for column in integer_columns:
+            company_summary[column] = (
+                pd.to_numeric(
+                    company_summary[column],
+                    errors="coerce",
+                )
+                .fillna(0)
+                .astype(int)
+            )
+
+        ordered_columns = [
+            "empresa",
+            "nivel",
+            "faturamento_total",
+            "pedidos_total",
+            "ticket_medio",
+            "primeira_venda",
+            "ultima_venda",
+            "dias_historico",
+            "meses_com_movimento",
+            "anos_com_movimento",
+            "primeiro_ano",
+            "ultimo_ano",
+            "participacao_historica",
+            "ranking_historico",
+        ]
+
+        summary = pd.concat(
+            [
+                pd.DataFrame(
+                    [consolidated]
+                ),
+                company_summary[
+                    ordered_columns
+                ],
+            ],
+            ignore_index=True,
+            sort=False,
+        )
+
+        return summary[
+            ordered_columns
+        ].copy()
 
     def _prepare_dataframe(
         self,

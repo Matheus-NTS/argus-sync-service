@@ -5,7 +5,6 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-
 from extractors.meta_extractor import MetaExtractor
 from features.intelligence.revenue.meta_dataset import MetaDataset
 from features.intelligence.revenue.revenue_daily import RevenueDaily
@@ -194,6 +193,23 @@ class RevenueIntelligencePipeline:
     "vendedores_em_hipermeta",
     "status",
 ],
+        "mart_revenue_historical_summary": [
+            "reference_date",
+            "empresa",
+            "nivel",
+            "faturamento_total",
+            "pedidos_total",
+            "ticket_medio",
+            "primeira_venda",
+            "ultima_venda",
+            "dias_historico",
+            "meses_com_movimento",
+            "anos_com_movimento",
+            "primeiro_ano",
+            "ultimo_ano",
+            "participacao_historica",
+            "ranking_historico",
+        ],
         "mart_revenue_yearly": [
             "reference_date",
             "empresa",
@@ -317,6 +333,12 @@ class RevenueIntelligencePipeline:
         "vendedores_em_supermeta",
         "vendedores_em_hipermeta",
         "meses_com_movimento",
+        "anos_com_movimento",
+        "primeiro_ano",
+        "ultimo_ano",
+        "ranking_historico",
+        "pedidos_total",
+        "dias_historico",
         "melhor_mes",
         "pior_mes",
         "mes_limite",
@@ -507,6 +529,9 @@ class RevenueIntelligencePipeline:
             ),
             "mart_revenue_current_summary": (
                 current_summary_mart
+            ),
+            "mart_revenue_historical_summary": (
+                history["historical_summary"]
             ),
             "mart_revenue_yearly": yearly_mart,
             "mart_revenue_ytd": ytd_mart,
@@ -753,6 +778,12 @@ class RevenueIntelligencePipeline:
         ]:
             if column not in df.columns:
                 df[column] = 0
+
+            df[column] = (
+                pd.to_numeric(df[column], errors="coerce")
+                .fillna(0)
+                .astype(int)
+            )
 
         return df
 

@@ -20,18 +20,21 @@ class CommercialDimensions:
     """
 
     COMPANY_MAPPING = {
-        "NTS RIO": "NTS Rio",
-        "NTS RIO DE JANEIRO": "NTS Rio",
-        "NTS RJ": "NTS Rio",
+    "NTS RIO": "NTS Rio",
+    "NTS RIO DE JANEIRO": "NTS Rio",
+    "NTS RJ": "NTS Rio",
 
-        "NTS SAO PAULO": "NTS Sao Paulo",
-        "NTS SP": "NTS Sao Paulo",
+    "NTS SAO PAULO": "NTS Sao Paulo",
+    "NTS SP": "NTS Sao Paulo",
 
-        "NTS BELEM": "NTS Belem",
+    # NOVO
+    "ANTS SAO PAULO": "NTS Sao Paulo",
 
-        "CRISTALINA": "CRISTALINA",
-        "DYNAMIC": "DYNAMIC",
-    }
+    "NTS BELEM": "NTS Belem",
+
+    "CRISTALINA": "CRISTALINA",
+    "DYNAMIC": "DYNAMIC",
+}
 
     SELLER_PARTICLES = {
         "DA",
