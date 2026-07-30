@@ -173,6 +173,17 @@ class RevenueIntelligencePipeline:
     "faturamento_dia",
     "meta",
     "meta_diaria",
+    "supermeta_diaria",
+    "hipermeta_diaria",
+    "atingimento_meta_diaria",
+    "gap_meta_diaria",
+    "gap_supermeta_diaria",
+    "gap_hipermeta_diaria",
+    "falta_para_meta_diaria",
+    "falta_para_supermeta_diaria",
+    "falta_para_hipermeta_diaria",
+    "status_meta_diaria",
+    "faixa_desempenho_diaria",
     "supermeta",
     "hipermeta",
     "atingimento_meta",
@@ -950,30 +961,73 @@ class RevenueIntelligencePipeline:
             return pd.DataFrame()
 
         current = company_monthly[
-            (company_monthly["ano"] == reference_date.year)
-            & (company_monthly["mes"] == reference_date.month)
+            (
+                company_monthly["ano"]
+                == reference_date.year
+            )
+            & (
+                company_monthly["mes"]
+                == reference_date.month
+            )
         ].copy()
 
         if current.empty:
             return pd.DataFrame()
 
-        daily = daily_mart.copy() if daily_mart is not None else pd.DataFrame()
+        daily = (
+            daily_mart.copy()
+            if daily_mart is not None
+            else pd.DataFrame()
+        )
+
         rows: list[dict[str, Any]] = []
 
         for _, monthly in current.iterrows():
-            empresa = str(monthly["empresa"])
+            empresa = str(
+                monthly["empresa"]
+            )
+
             company_daily = (
                 daily[
-                    (daily["empresa"].astype(str) == empresa)
-                    & (daily["ano"] == reference_date.year)
-                    & (daily["mes"] == reference_date.month)
+                    (
+                        daily["empresa"].astype(str)
+                        == empresa
+                    )
+                    & (
+                        daily["ano"]
+                        == reference_date.year
+                    )
+                    & (
+                        daily["mes"]
+                        == reference_date.month
+                    )
                 ].sort_values("data")
                 if not daily.empty
                 else pd.DataFrame()
             )
 
-            faturamento = float(monthly.get("faturamento", 0) or 0)
-            meta = float(monthly.get("meta", 0) or 0)
+            faturamento_raw = monthly.get(
+                "faturamento",
+                0,
+            )
+
+            faturamento = (
+                float(faturamento_raw)
+                if pd.notna(faturamento_raw)
+                else 0.0
+            )
+
+            meta_raw = monthly.get(
+                "meta",
+                0,
+            )
+
+            meta = (
+                float(meta_raw)
+                if pd.notna(meta_raw)
+                else 0.0
+            )
+
             faturamento_dia = 0.0
 
             if not company_daily.empty:
@@ -981,82 +1035,326 @@ class RevenueIntelligencePipeline:
                     company_daily["data"].astype(str)
                     == reference_date.isoformat()
                 ]
+
                 if not today_rows.empty:
                     faturamento_dia = float(
-                        today_rows["faturamento"].sum()
+                        today_rows[
+                            "faturamento"
+                        ].sum()
                     )
 
                 latest = company_daily.iloc[-1]
+
                 dias_uteis_mes = int(
-                    latest.get("dias_uteis_mes", 0) or 0
+                    latest.get(
+                        "dias_uteis_mes",
+                        0,
+                    )
+                    or 0
                 )
+
                 dias_uteis_decorridos = int(
-                    latest.get("dia_util_numero", 0) or 0
+                    latest.get(
+                        "dia_util_numero",
+                        0,
+                    )
+                    or 0
                 )
             else:
                 dias_uteis_mes = 0
                 dias_uteis_decorridos = 0
 
-            dias_uteis_restantes = max(
-                dias_uteis_mes - dias_uteis_decorridos, 0
+            meta_diaria = (
+                meta / dias_uteis_mes
+                if dias_uteis_mes > 0
+                else 0.0
             )
+
+            supermeta_diaria = (
+                meta_diaria
+                * RevenueOverview.SUPERMETA_FACTOR
+                if meta_diaria > 0
+                else 0.0
+            )
+
+            hipermeta_diaria = (
+                meta_diaria
+                * RevenueOverview.HIPERMETA_FACTOR
+                if meta_diaria > 0
+                else 0.0
+            )
+
+            atingimento_meta_diaria = (
+                faturamento_dia
+                / meta_diaria
+                if meta_diaria > 0
+                else 0.0
+            )
+
+            gap_meta_diaria = (
+                faturamento_dia
+                - meta_diaria
+                if meta_diaria > 0
+                else 0.0
+            )
+
+            gap_supermeta_diaria = (
+                faturamento_dia
+                - supermeta_diaria
+                if meta_diaria > 0
+                else 0.0
+            )
+
+            gap_hipermeta_diaria = (
+                faturamento_dia
+                - hipermeta_diaria
+                if meta_diaria > 0
+                else 0.0
+            )
+
+            falta_para_meta_diaria = (
+                max(
+                    meta_diaria
+                    - faturamento_dia,
+                    0.0,
+                )
+                if meta_diaria > 0
+                else 0.0
+            )
+
+            falta_para_supermeta_diaria = (
+                max(
+                    supermeta_diaria
+                    - faturamento_dia,
+                    0.0,
+                )
+                if meta_diaria > 0
+                else 0.0
+            )
+
+            falta_para_hipermeta_diaria = (
+                max(
+                    hipermeta_diaria
+                    - faturamento_dia,
+                    0.0,
+                )
+                if meta_diaria > 0
+                else 0.0
+            )
+
+            if meta_diaria <= 0:
+                faixa_desempenho_diaria = (
+                    "sem_meta_diaria"
+                )
+                status_meta_diaria = (
+                    "not_available"
+                )
+
+            elif (
+                faturamento_dia
+                >= hipermeta_diaria
+            ):
+                faixa_desempenho_diaria = (
+                    "hipermeta"
+                )
+                status_meta_diaria = (
+                    "achieved"
+                )
+
+            elif (
+                faturamento_dia
+                >= supermeta_diaria
+            ):
+                faixa_desempenho_diaria = (
+                    "supermeta"
+                )
+                status_meta_diaria = (
+                    "achieved"
+                )
+
+            elif faturamento_dia >= meta_diaria:
+                faixa_desempenho_diaria = (
+                    "meta"
+                )
+                status_meta_diaria = (
+                    "achieved"
+                )
+
+            else:
+                faixa_desempenho_diaria = (
+                    "abaixo_meta"
+                )
+                status_meta_diaria = (
+                    "below_target"
+                )
+
+            dias_uteis_restantes = max(
+                dias_uteis_mes
+                - dias_uteis_decorridos,
+                0,
+            )
+
             ritmo_atual = (
-                faturamento / dias_uteis_decorridos
+                faturamento
+                / dias_uteis_decorridos
                 if dias_uteis_decorridos > 0
                 else 0.0
             )
-            gap_meta = faturamento - meta if meta > 0 else 0.0
-            ritmo_necessario = (
-                max(meta - faturamento, 0.0)
-                / dias_uteis_restantes
-                if dias_uteis_restantes > 0 and meta > 0
+
+            gap_meta = (
+                faturamento - meta
+                if meta > 0
                 else 0.0
             )
-            projecao = (
-                faturamento
-                + ritmo_atual * dias_uteis_restantes
-            )
-            atingimento = (
-                faturamento / meta if meta > 0 else 0.0
+
+            ritmo_necessario = (
+                max(
+                    meta - faturamento,
+                    0.0,
+                )
+                / dias_uteis_restantes
+                if (
+                    dias_uteis_restantes > 0
+                    and meta > 0
+                )
+                else 0.0
             )
 
-            rows.append({
-                "empresa": empresa,
-                "nivel": "empresa",
-                "ano": reference_date.year,
-                "mes": reference_date.month,
-                "faturamento": faturamento,
-                "faturamento_dia": faturamento_dia,
-                "meta": meta,
-                "meta_diaria": (
-                    meta / dias_uteis_mes
-                    if dias_uteis_mes > 0
-                    else 0.0
-                ),
-                "supermeta": float(monthly.get("supermeta", 0) or 0),
-                "hipermeta": float(monthly.get("hipermeta", 0) or 0),
-                "atingimento_meta": atingimento,
-                "gap_meta": gap_meta,
-                "ritmo_atual": ritmo_atual,
-                "ritmo_necessario": ritmo_necessario,
-                "dias_uteis_mes": dias_uteis_mes,
-                "dias_uteis_decorridos": dias_uteis_decorridos,
-                "dias_uteis_restantes": dias_uteis_restantes,
-                "projecao_fechamento": projecao,
-                "status_meta": monthly.get("status_meta"),
-                "faixa_desempenho": monthly.get("faixa_desempenho"),
-                "empresas_com_faturamento": 1 if faturamento else 0,
-                "vendedores_com_faturamento": int(
-                    monthly.get("vendedores_ativos", 0) or 0
-                ),
-                "vendedores_com_meta_valida": int(
-                    monthly.get("vendedores_com_meta", 0) or 0
-                ),
-                "vendedores_que_bateram_meta": 0,
-                "vendedores_em_supermeta": 0,
-                "vendedores_em_hipermeta": 0,
-                "status": "available",
-            })
+            projecao = (
+                faturamento
+                + ritmo_atual
+                * dias_uteis_restantes
+            )
+
+            atingimento = (
+                faturamento / meta
+                if meta > 0
+                else 0.0
+            )
+
+            rows.append(
+                {
+                    "empresa": empresa,
+                    "nivel": "empresa",
+                    "ano": reference_date.year,
+                    "mes": reference_date.month,
+                    "faturamento": faturamento,
+                    "faturamento_dia": round(
+                        faturamento_dia,
+                        2,
+                    ),
+                    "meta": meta,
+                    "meta_diaria": round(
+                        meta_diaria,
+                        2,
+                    ),
+                    "supermeta_diaria": round(
+                        supermeta_diaria,
+                        2,
+                    ),
+                    "hipermeta_diaria": round(
+                        hipermeta_diaria,
+                        2,
+                    ),
+                    "atingimento_meta_diaria": round(
+                        atingimento_meta_diaria,
+                        6,
+                    ),
+                    "gap_meta_diaria": round(
+                        gap_meta_diaria,
+                        2,
+                    ),
+                    "gap_supermeta_diaria": round(
+                        gap_supermeta_diaria,
+                        2,
+                    ),
+                    "gap_hipermeta_diaria": round(
+                        gap_hipermeta_diaria,
+                        2,
+                    ),
+                    "falta_para_meta_diaria": round(
+                        falta_para_meta_diaria,
+                        2,
+                    ),
+                    "falta_para_supermeta_diaria": round(
+                        falta_para_supermeta_diaria,
+                        2,
+                    ),
+                    "falta_para_hipermeta_diaria": round(
+                        falta_para_hipermeta_diaria,
+                        2,
+                    ),
+                    "status_meta_diaria": (
+                        status_meta_diaria
+                    ),
+                    "faixa_desempenho_diaria": (
+                        faixa_desempenho_diaria
+                    ),
+                    "supermeta": float(
+                        monthly.get(
+                            "supermeta",
+                            0,
+                        )
+                        or 0
+                    ),
+                    "hipermeta": float(
+                        monthly.get(
+                            "hipermeta",
+                            0,
+                        )
+                        or 0
+                    ),
+                    "atingimento_meta": atingimento,
+                    "gap_meta": gap_meta,
+                    "ritmo_atual": ritmo_atual,
+                    "ritmo_necessario": (
+                        ritmo_necessario
+                    ),
+                    "dias_uteis_mes": (
+                        dias_uteis_mes
+                    ),
+                    "dias_uteis_decorridos": (
+                        dias_uteis_decorridos
+                    ),
+                    "dias_uteis_restantes": (
+                        dias_uteis_restantes
+                    ),
+                    "projecao_fechamento": (
+                        projecao
+                    ),
+                    "status_meta": monthly.get(
+                        "status_meta"
+                    ),
+                    "faixa_desempenho": (
+                        monthly.get(
+                            "faixa_desempenho"
+                        )
+                    ),
+                    "empresas_com_faturamento": (
+                        1
+                        if faturamento
+                        else 0
+                    ),
+                    "vendedores_com_faturamento": int(
+                        monthly.get(
+                            "vendedores_ativos",
+                            0,
+                        )
+                        or 0
+                    ),
+                    "vendedores_com_meta_valida": int(
+                        monthly.get(
+                            "vendedores_com_meta",
+                            0,
+                        )
+                        or 0
+                    ),
+                    "vendedores_que_bateram_meta": 0,
+                    "vendedores_em_supermeta": 0,
+                    "vendedores_em_hipermeta": 0,
+                    "status": "available",
+                }
+            )
 
         return pd.DataFrame(rows)
 

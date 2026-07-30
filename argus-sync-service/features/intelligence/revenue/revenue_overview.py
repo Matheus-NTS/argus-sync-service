@@ -713,6 +713,108 @@ class RevenueOverview:
             current_sellers["meta_valida"]
         ]
 
+        faturamento_dia = float(
+            daily.faturamento_dia or 0
+        )
+
+        meta_diaria = float(
+            daily.meta_diaria or 0
+        )
+
+        meta_diaria_valida = (
+            meta_diaria > 0
+        )
+
+        supermeta_diaria = (
+            meta_diaria * self.SUPERMETA_FACTOR
+            if meta_diaria_valida
+            else 0.0
+        )
+
+        hipermeta_diaria = (
+            meta_diaria * self.HIPERMETA_FACTOR
+            if meta_diaria_valida
+            else 0.0
+        )
+
+        atingimento_meta_diaria = (
+            faturamento_dia / meta_diaria
+            if meta_diaria_valida
+            else 0.0
+        )
+
+        gap_meta_diaria = (
+            faturamento_dia - meta_diaria
+            if meta_diaria_valida
+            else 0.0
+        )
+
+        gap_supermeta_diaria = (
+            faturamento_dia - supermeta_diaria
+            if meta_diaria_valida
+            else 0.0
+        )
+
+        gap_hipermeta_diaria = (
+            faturamento_dia - hipermeta_diaria
+            if meta_diaria_valida
+            else 0.0
+        )
+
+        falta_para_meta_diaria = (
+            max(meta_diaria - faturamento_dia, 0.0)
+            if meta_diaria_valida
+            else 0.0
+        )
+
+        falta_para_supermeta_diaria = (
+            max(supermeta_diaria - faturamento_dia, 0.0)
+            if meta_diaria_valida
+            else 0.0
+        )
+
+        falta_para_hipermeta_diaria = (
+            max(hipermeta_diaria - faturamento_dia, 0.0)
+            if meta_diaria_valida
+            else 0.0
+        )
+
+        if not meta_diaria_valida:
+            faixa_desempenho_diaria = (
+                "sem_meta_diaria"
+            )
+            status_meta_diaria = (
+                "not_available"
+            )
+        elif faturamento_dia >= hipermeta_diaria:
+            faixa_desempenho_diaria = (
+                "hipermeta"
+            )
+            status_meta_diaria = (
+                "achieved"
+            )
+        elif faturamento_dia >= supermeta_diaria:
+            faixa_desempenho_diaria = (
+                "supermeta"
+            )
+            status_meta_diaria = (
+                "achieved"
+            )
+        elif faturamento_dia >= meta_diaria:
+            faixa_desempenho_diaria = (
+                "meta"
+            )
+            status_meta_diaria = (
+                "achieved"
+            )
+        else:
+            faixa_desempenho_diaria = (
+                "abaixo_meta"
+            )
+            status_meta_diaria = (
+                "below_target"
+            )
+        
         record = {
             "reference_date": pd.Timestamp(
                 self.reference_date
@@ -722,8 +824,56 @@ class RevenueOverview:
             "faturamento": float(
                 current_row["faturamento"]
             ),
-            "faturamento_dia": daily.faturamento_dia,
-            "meta_diaria": daily.meta_diaria,
+                        "faturamento_dia": round(
+                faturamento_dia,
+                2,
+            ),
+            "meta_diaria": round(
+                meta_diaria,
+                2,
+            ),
+            "supermeta_diaria": round(
+                supermeta_diaria,
+                2,
+            ),
+            "hipermeta_diaria": round(
+                hipermeta_diaria,
+                2,
+            ),
+            "atingimento_meta_diaria": round(
+                atingimento_meta_diaria,
+                6,
+            ),
+            "gap_meta_diaria": round(
+                gap_meta_diaria,
+                2,
+            ),
+            "gap_supermeta_diaria": round(
+                gap_supermeta_diaria,
+                2,
+            ),
+            "gap_hipermeta_diaria": round(
+                gap_hipermeta_diaria,
+                2,
+            ),
+            "falta_para_meta_diaria": round(
+                falta_para_meta_diaria,
+                2,
+            ),
+            "falta_para_supermeta_diaria": round(
+                falta_para_supermeta_diaria,
+                2,
+            ),
+            "falta_para_hipermeta_diaria": round(
+                falta_para_hipermeta_diaria,
+                2,
+            ),
+            "status_meta_diaria": (
+                status_meta_diaria
+            ),
+            "faixa_desempenho_diaria": (
+                faixa_desempenho_diaria
+            ),
             "ritmo_atual": daily.ritmo_atual,
             "ritmo_necessario": daily.ritmo_necessario,
             "dias_uteis_mes": daily.dias_uteis_mes,
