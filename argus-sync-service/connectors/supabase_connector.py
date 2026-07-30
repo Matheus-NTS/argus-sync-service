@@ -110,6 +110,82 @@ class SupabaseConnector:
 
         return query.execute()
 
+    def delete_where_batches(
+        self,
+        table_name,
+        filters,
+        batch_size=250,
+        id_column="id"
+    ):
+
+        if not filters:
+            raise ValueError(
+                "delete_where_batches exige ao menos um filtro."
+            )
+
+        if batch_size <= 0:
+            raise ValueError(
+                "batch_size deve ser maior que zero."
+            )
+
+        responses = []
+        deleted_rows = 0
+
+        while True:
+
+            select_query = (
+                self.client
+                .table(table_name)
+                .select(id_column)
+            )
+
+            for column, value in filters.items():
+                select_query = select_query.eq(
+                    column,
+                    value
+                )
+
+            selection = (
+                select_query
+                .limit(batch_size)
+                .execute()
+            )
+
+            rows = selection.data or []
+
+            if not rows:
+                break
+
+            ids = [
+                row[id_column]
+                for row in rows
+                if row.get(id_column) is not None
+            ]
+
+            if not ids:
+                raise RuntimeError(
+                    f"Não foi possível localizar valores válidos "
+                    f"na coluna {id_column!r} de {table_name!r}."
+                )
+
+            response = (
+                self.client
+                .table(table_name)
+                .delete()
+                .in_(id_column, ids)
+                .execute()
+            )
+
+            responses.append(response)
+            deleted_rows += len(ids)
+
+            print(
+                f"  Exclusão em lotes: {table_name} "
+                f"- {deleted_rows} registros removidos"
+            )
+
+        return responses
+
     def delete_all(self, table_name):
 
         return (
@@ -151,6 +227,32 @@ class SupabaseConnector:
         self.delete_where(
             table_name,
             filters
+        )
+
+        if not data:
+            return []
+
+        return self.insert_batches(
+            table_name=table_name,
+            data=data,
+            batch_size=batch_size
+        )
+
+    def replace_snapshot_batches_paginated_delete(
+        self,
+        table_name,
+        filters,
+        data,
+        batch_size=500,
+        delete_batch_size=250,
+        id_column="id"
+    ):
+
+        self.delete_where_batches(
+            table_name=table_name,
+            filters=filters,
+            batch_size=delete_batch_size,
+            id_column=id_column
         )
 
         if not data:

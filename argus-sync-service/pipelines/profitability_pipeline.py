@@ -563,11 +563,12 @@ class ProfitabilityPipeline:
             [overview_record]
         )
 
-        self.supabase.replace_snapshot_batches(
+        self.supabase.replace_snapshot_batches_paginated_delete(
             "mart_profitability_detail_snapshot",
             filters,
             detail_records,
-            batch_size=500
+            batch_size=500,
+            delete_batch_size=250
         )
 
         self.supabase.replace_snapshot_batches(

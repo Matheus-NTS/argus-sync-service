@@ -136,10 +136,11 @@ class StockPipeline:
                 "status": row["status"]
             })
 
-        self.supabase.replace_snapshot(
+        self.supabase.replace_snapshot_batches(
             "mart_stock_product_snapshot",
             filters,
-            stock_records
+            stock_records,
+            batch_size=500
         )
 
         # -------------------------
