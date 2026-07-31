@@ -36,11 +36,18 @@ class SalesMartPipeline:
         self._save_categories(category_df_all, filters)
 
         customer_daily_records = 0
+        product_daily_records = 0
 
         if period_type == "historico":
             customer_daily_df = self._build_customer_daily(pedidos)
             customer_daily_records = self._save_customer_daily(
                 customer_daily_df,
+                reference_date=filters["reference_date"]
+            )
+
+            product_daily_df = self._build_product_daily(pedidos)
+            product_daily_records = self._save_product_daily(
+                product_daily_df,
                 reference_date=filters["reference_date"]
             )
 
@@ -57,7 +64,8 @@ class SalesMartPipeline:
             "product_df_all": product_df_all,
             "customer_df_all": customer_df_all,
             "category_df_all": category_df_all,
-            "customer_daily_records": customer_daily_records
+            "customer_daily_records": customer_daily_records,
+            "product_daily_records": product_daily_records
         }
 
     def _normalize_products(self, product_df):
@@ -131,6 +139,339 @@ class SalesMartPipeline:
             )
 
         return result
+
+    @staticmethod
+    def _first_existing_column(dataframe, candidates):
+
+        for column in candidates:
+            if column in dataframe.columns:
+                return column
+
+        return None
+
+    def _build_product_daily(self, pedidos):
+
+        columns = [
+            "sale_date",
+            "Empresa",
+            "prod_codigo",
+            "produto",
+            "Classificacao",
+            "unidade",
+            "faturamento_total",
+            "quantidade",
+            "pedidos",
+            "clientes"
+        ]
+
+        if pedidos is None or pedidos.empty:
+            return pd.DataFrame(columns=columns)
+
+        quantity_column = self._first_existing_column(
+            pedidos,
+            [
+                "quantidade",
+                "Quantidade",
+                "qtd",
+                "Qtd",
+                "quantidade_item"
+            ]
+        )
+
+        classification_column = self._first_existing_column(
+            pedidos,
+            [
+                "Classificacao",
+                "classificacao",
+                "Classificação"
+            ]
+        )
+
+        unit_column = self._first_existing_column(
+            pedidos,
+            [
+                "unidade",
+                "Unidade",
+                "UNIDADE"
+            ]
+        )
+
+        required_columns = [
+            "Data",
+            "Empresa",
+            "prod_codigo",
+            "produto",
+            "Valor_total_Unitario",
+            "numero_pedido",
+            "codigo_cliente"
+        ]
+
+        missing_columns = [
+            column
+            for column in required_columns
+            if column not in pedidos.columns
+        ]
+
+        if missing_columns:
+            raise KeyError(
+                "Não foi possível gerar mart_sales_product_daily. "
+                "Colunas ausentes: "
+                + ", ".join(missing_columns)
+            )
+
+        selected_columns = required_columns.copy()
+
+        for optional_column in [
+            quantity_column,
+            classification_column,
+            unit_column
+        ]:
+            if (
+                optional_column is not None
+                and optional_column not in selected_columns
+            ):
+                selected_columns.append(optional_column)
+
+        df = pedidos[selected_columns].copy()
+
+        df["Data"] = pd.to_datetime(
+            df["Data"],
+            errors="coerce"
+        )
+
+        df["Valor_total_Unitario"] = pd.to_numeric(
+            df["Valor_total_Unitario"],
+            errors="coerce"
+        ).fillna(0)
+
+        if quantity_column is not None:
+            df["_quantidade"] = pd.to_numeric(
+                df[quantity_column],
+                errors="coerce"
+            ).fillna(0)
+        else:
+            df["_quantidade"] = 1
+
+        df["_classificacao"] = (
+            df[classification_column]
+            if classification_column is not None
+            else None
+        )
+
+        df["_unidade"] = (
+            df[unit_column]
+            if unit_column is not None
+            else None
+        )
+
+        df = df[
+            df["Data"].notna()
+            & df["Empresa"].notna()
+            & df["prod_codigo"].notna()
+            & df["produto"].notna()
+        ].copy()
+
+        if df.empty:
+            return pd.DataFrame(columns=columns)
+
+        df["sale_date"] = df["Data"].dt.date
+
+        def aggregate(base_df, group_columns, empresa_value=None):
+
+            result = (
+                base_df
+                .sort_values(
+                    [
+                        "sale_date",
+                        "Empresa",
+                        "prod_codigo",
+                        "produto"
+                    ],
+                    ascending=True
+                )
+                .groupby(
+                    group_columns,
+                    dropna=False,
+                    as_index=False
+                )
+                .agg(
+                    produto=(
+                        "produto",
+                        "first"
+                    ),
+                    Classificacao=(
+                        "_classificacao",
+                        "first"
+                    ),
+                    unidade=(
+                        "_unidade",
+                        "first"
+                    ),
+                    faturamento_total=(
+                        "Valor_total_Unitario",
+                        "sum"
+                    ),
+                    quantidade=(
+                        "_quantidade",
+                        "sum"
+                    ),
+                    pedidos=(
+                        "numero_pedido",
+                        "nunique"
+                    ),
+                    clientes=(
+                        "codigo_cliente",
+                        "nunique"
+                    )
+                )
+            )
+
+            if empresa_value is not None:
+                result["Empresa"] = empresa_value
+
+            return result
+
+        by_company = aggregate(
+            df,
+            [
+                "sale_date",
+                "Empresa",
+                "prod_codigo"
+            ]
+        )
+
+        total = aggregate(
+            df,
+            [
+                "sale_date",
+                "prod_codigo"
+            ],
+            empresa_value="TOTAL"
+        )
+
+        daily = pd.concat(
+            [
+                total,
+                by_company
+            ],
+            ignore_index=True,
+            sort=False
+        )
+
+        daily["prod_codigo"] = (
+            daily["prod_codigo"]
+            .astype(str)
+            .str.strip()
+        )
+
+        daily["produto"] = (
+            daily["produto"]
+            .astype(str)
+            .str.strip()
+        )
+
+        daily["Empresa"] = (
+            daily["Empresa"]
+            .astype(str)
+            .str.strip()
+        )
+
+        daily = daily[
+            daily["prod_codigo"].ne("")
+            & daily["produto"].ne("")
+            & daily["Empresa"].ne("")
+        ].copy()
+
+        daily = (
+            daily
+            .sort_values(
+                [
+                    "sale_date",
+                    "Empresa",
+                    "prod_codigo"
+                ],
+                ascending=True
+            )
+            .drop_duplicates(
+                subset=[
+                    "sale_date",
+                    "Empresa",
+                    "prod_codigo"
+                ],
+                keep="first"
+            )
+            .reset_index(drop=True)
+        )
+
+        return daily[columns]
+
+    def _save_product_daily(
+        self,
+        product_daily_df,
+        reference_date
+    ):
+
+        filters = {
+            "reference_date": reference_date
+        }
+
+        records = []
+
+        if (
+            product_daily_df is not None
+            and not product_daily_df.empty
+        ):
+            for _, row in product_daily_df.iterrows():
+
+                sale_date = pd.to_datetime(
+                    row["sale_date"],
+                    errors="coerce"
+                )
+
+                if pd.isna(sale_date):
+                    continue
+
+                classificacao = row.get("Classificacao")
+                if pd.isna(classificacao):
+                    classificacao = None
+
+                unidade = row.get("unidade")
+                if pd.isna(unidade):
+                    unidade = None
+
+                records.append({
+                    "reference_date": reference_date,
+                    "sale_date": sale_date.date().isoformat(),
+                    "empresa": row["Empresa"],
+                    "prod_codigo": str(row["prod_codigo"]),
+                    "produto": row["produto"],
+                    "classificacao": classificacao,
+                    "unidade": unidade,
+                    "faturamento_total": round(
+                        float(row["faturamento_total"]),
+                        2
+                    ),
+                    "quantidade": round(
+                        float(row["quantidade"]),
+                        4
+                    ),
+                    "pedidos": int(row["pedidos"]),
+                    "clientes": int(row["clientes"])
+                })
+
+        print(
+            "  Publicando produtos diários: "
+            f"{len(records):,} registros"
+        )
+
+        self.supabase.replace_snapshot_batches(
+            "mart_sales_product_daily",
+            filters,
+            records,
+            batch_size=500
+        )
+
+        return len(records)
 
     def _build_customer_daily(self, pedidos):
 
