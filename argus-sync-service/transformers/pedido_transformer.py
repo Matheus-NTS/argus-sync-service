@@ -10,6 +10,7 @@ class PedidoTransformer:
         self,
         valid_status=None,
         valid_order_types=None,
+        excluded_sellers=None,
     ):
         self.valid_status = valid_status or [
             "CONCRETIZADO",
@@ -19,6 +20,12 @@ class PedidoTransformer:
             "CT 0",
             "CT 100",
             "SERVICO",
+        }
+
+        self.excluded_sellers = excluded_sellers or {
+            "GABRIEL VIERA",
+            "GABRIEL ALENCAR",
+            "MATHEUS HENRIQUE CARDOSO SALME",
         }
 
     @staticmethod
@@ -137,6 +144,18 @@ class PedidoTransformer:
             ],
         )
 
+        vendedor_column = self._find_column(
+            pedidos,
+            [
+                "vendedor",
+                "nome_vendedor",
+                "vendedor_nome",
+                "nome do vendedor",
+                "representante",
+                "consultor",
+            ],
+        )
+
         missing_columns = []
 
         if situacao_column is None:
@@ -144,6 +163,9 @@ class PedidoTransformer:
 
         if tipo_pedido_column is None:
             missing_columns.append("tipo_pedido")
+
+        if vendedor_column is None:
+            missing_columns.append("vendedor")
 
         if missing_columns:
             available_columns = ", ".join(
@@ -166,6 +188,10 @@ class PedidoTransformer:
             pedidos[tipo_pedido_column]
         )
 
+        vendedor_normalizado = self._normalize_series(
+            pedidos[vendedor_column]
+        )
+
         valid_status = {
             self._normalize_value(status)
             for status in self.valid_status
@@ -174,6 +200,11 @@ class PedidoTransformer:
         valid_order_types = {
             self._normalize_value(order_type)
             for order_type in self.valid_order_types
+        }
+
+        excluded_sellers = {
+            self._normalize_value(seller)
+            for seller in self.excluded_sellers
         }
 
         valid_status_mask = (
@@ -197,9 +228,18 @@ class PedidoTransformer:
             | valid_ct30_mask
         )
 
+        excluded_seller_mask = (
+            vendedor_normalizado.isin(
+                excluded_sellers
+            )
+        )
+
+        valid_seller_mask = ~excluded_seller_mask
+
         filtered_orders = pedidos[
             valid_status_mask
             & valid_order_type_mask
+            & valid_seller_mask
         ].copy()
 
         print()
@@ -217,12 +257,35 @@ class PedidoTransformer:
             f"{int(valid_order_type_mask.sum()):,}"
         )
         print(
+            f"  Transferências internas excluídas: "
+            f"{int(excluded_seller_mask.sum()):,}"
+        )
+        print(
             f"  Vendas concretizadas mantidas: "
             f"{len(filtered_orders):,}"
         )
         print(
-            f"  Registros excluídos: "
+            f"  Registros excluídos no total: "
             f"{len(pedidos) - len(filtered_orders):,}"
         )
+
+        if excluded_seller_mask.any():
+            excluded_summary = (
+                vendedor_normalizado[
+                    excluded_seller_mask
+                ]
+                .value_counts()
+                .to_dict()
+            )
+
+            print(
+                "  Detalhamento das transferências internas:"
+            )
+
+            for seller, quantity in excluded_summary.items():
+                print(
+                    f"    - {seller}: "
+                    f"{int(quantity):,}"
+                )
 
         return filtered_orders
