@@ -487,6 +487,14 @@ class RevenueIntelligencePipeline:
             sort=False,
         )
 
+        current_summary_mart = (
+            self._apply_open_business_day_projection(
+                current_summary=current_summary_mart,
+                daily_mart=daily_mart,
+                reference_date=reference_date,
+            )
+        )
+
         # O bloco abaixo permanece pronto para a próxima etapa.
         # Ele será alcançado após removermos o SystemExit temporário.
         projection_service = RevenueProjection(
@@ -1357,6 +1365,206 @@ class RevenueIntelligencePipeline:
             )
 
         return pd.DataFrame(rows)
+
+    @classmethod
+    def _apply_open_business_day_projection(
+        cls,
+        current_summary: pd.DataFrame,
+        daily_mart: pd.DataFrame,
+        reference_date: date,
+    ) -> pd.DataFrame:
+        """
+        Corrige a projeção de fechamento enquanto o dia útil atual
+        ainda está em andamento.
+
+        A regra utiliza somente dias úteis já encerrados para calcular
+        o ritmo médio. Em seguida, estima o restante do dia atual e os
+        próximos dias úteis do mês.
+
+        Fórmula:
+        - média dos dias encerrados =
+          faturamento até ontem / dias úteis encerrados;
+        - restante estimado do dia =
+          max(média dos dias encerrados - faturamento de hoje, 0);
+        - projeção =
+          faturamento atual
+          + restante estimado do dia
+          + média dos dias encerrados * dias úteis futuros.
+
+        Em dias não úteis, mantém a projeção já calculada.
+        """
+        if current_summary is None or current_summary.empty:
+            return pd.DataFrame()
+
+        result = current_summary.copy()
+
+        if daily_mart is None or daily_mart.empty:
+            return result
+
+        daily = daily_mart.copy()
+
+        if "data" not in daily.columns:
+            return result
+
+        daily["data_normalizada"] = pd.to_datetime(
+            daily["data"],
+            errors="coerce",
+        ).dt.date
+
+        today_daily = daily[
+            daily["data_normalizada"] == reference_date
+        ].copy()
+
+        if today_daily.empty:
+            return result
+
+        for row_index, row in result.iterrows():
+            empresa = str(
+                row.get("empresa", "")
+            ).strip()
+
+            nivel = str(
+                row.get("nivel", "")
+            ).strip().lower()
+
+            if nivel == "consolidado":
+                matching_daily = today_daily[
+                    today_daily["nivel"]
+                    .astype(str)
+                    .str.strip()
+                    .str.lower()
+                    == "consolidado"
+                ]
+
+                if matching_daily.empty:
+                    matching_daily = today_daily[
+                        today_daily["empresa"]
+                        .astype(str)
+                        .str.strip()
+                        .str.lower()
+                        == "consolidado"
+                    ]
+            else:
+                matching_daily = today_daily[
+                    today_daily["empresa"]
+                    .astype(str)
+                    .str.strip()
+                    == empresa
+                ]
+
+            if matching_daily.empty:
+                continue
+
+            dia_util_value = matching_daily.iloc[-1].get(
+                "dia_util",
+                False,
+            )
+
+            if pd.isna(dia_util_value):
+                is_business_day = False
+            elif isinstance(dia_util_value, str):
+                is_business_day = (
+                    dia_util_value
+                    .strip()
+                    .lower()
+                    in {
+                        "1",
+                        "true",
+                        "sim",
+                        "yes",
+                    }
+                )
+            else:
+                is_business_day = bool(
+                    dia_util_value
+                )
+
+            if not is_business_day:
+                continue
+
+            faturamento = float(
+                pd.to_numeric(
+                    row.get("faturamento", 0),
+                    errors="coerce",
+                )
+                or 0
+            )
+
+            faturamento_dia = float(
+                pd.to_numeric(
+                    row.get("faturamento_dia", 0),
+                    errors="coerce",
+                )
+                or 0
+            )
+
+            dias_uteis_mes = int(
+                pd.to_numeric(
+                    row.get("dias_uteis_mes", 0),
+                    errors="coerce",
+                )
+                or 0
+            )
+
+            dias_uteis_decorridos = int(
+                pd.to_numeric(
+                    row.get(
+                        "dias_uteis_decorridos",
+                        0,
+                    ),
+                    errors="coerce",
+                )
+                or 0
+            )
+
+            dias_uteis_encerrados = max(
+                dias_uteis_decorridos - 1,
+                0,
+            )
+
+            dias_uteis_futuros = max(
+                dias_uteis_mes
+                - dias_uteis_decorridos,
+                0,
+            )
+
+            faturamento_ate_ontem = max(
+                faturamento - faturamento_dia,
+                0.0,
+            )
+
+            if dias_uteis_encerrados <= 0:
+                continue
+
+            media_dias_encerrados = (
+                faturamento_ate_ontem
+                / dias_uteis_encerrados
+            )
+
+            estimativa_restante_hoje = max(
+                media_dias_encerrados
+                - faturamento_dia,
+                0.0,
+            )
+
+            projecao_fechamento = (
+                faturamento
+                + estimativa_restante_hoje
+                + (
+                    media_dias_encerrados
+                    * dias_uteis_futuros
+                )
+            )
+
+            result.at[
+                row_index,
+                "projecao_fechamento",
+            ] = round(
+                projecao_fechamento,
+                2,
+            )
+
+        return result
 
     @staticmethod
     def _resolve_projection_base_year(
