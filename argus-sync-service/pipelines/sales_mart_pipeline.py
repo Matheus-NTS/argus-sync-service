@@ -35,6 +35,15 @@ class SalesMartPipeline:
         self._save_customers(customer_df_all, filters)
         self._save_categories(category_df_all, filters)
 
+        customer_daily_records = 0
+
+        if period_type == "historico":
+            customer_daily_df = self._build_customer_daily(pedidos)
+            customer_daily_records = self._save_customer_daily(
+                customer_daily_df,
+                reference_date=filters["reference_date"]
+            )
+
         product_df_total = product_df_all[product_df_all["Empresa"] == "TOTAL"].copy()
         customer_df_total = customer_df_all[customer_df_all["Empresa"] == "TOTAL"].copy()
         category_df_total = category_df_all[category_df_all["Empresa"] == "TOTAL"].copy()
@@ -47,7 +56,8 @@ class SalesMartPipeline:
             "category_df": category_df_total,
             "product_df_all": product_df_all,
             "customer_df_all": customer_df_all,
-            "category_df_all": category_df_all
+            "category_df_all": category_df_all,
+            "customer_daily_records": customer_daily_records
         }
 
     def _normalize_products(self, product_df):
@@ -121,6 +131,265 @@ class SalesMartPipeline:
             )
 
         return result
+
+    def _build_customer_daily(self, pedidos):
+
+        columns = [
+            "sale_date",
+            "Empresa",
+            "codigo_cliente",
+            "Cliente",
+            "faturamento_total",
+            "pedidos",
+            "itens_vendidos",
+            "mix_produtos",
+            "ultima_compra"
+        ]
+
+        if pedidos is None or pedidos.empty:
+            return pd.DataFrame(columns=columns)
+
+        required_columns = [
+            "Data",
+            "Empresa",
+            "codigo_cliente",
+            "Cliente",
+            "Valor_total_Unitario",
+            "numero_pedido",
+            "codigo_item",
+            "prod_codigo"
+        ]
+
+        missing_columns = [
+            column
+            for column in required_columns
+            if column not in pedidos.columns
+        ]
+
+        if missing_columns:
+            raise KeyError(
+                "Não foi possível gerar mart_sales_customer_daily. "
+                "Colunas ausentes: "
+                + ", ".join(missing_columns)
+            )
+
+        df = pedidos[required_columns].copy()
+
+        df["Data"] = pd.to_datetime(
+            df["Data"],
+            errors="coerce"
+        )
+
+        df["Valor_total_Unitario"] = pd.to_numeric(
+            df["Valor_total_Unitario"],
+            errors="coerce"
+        ).fillna(0)
+
+        df = df[
+            df["Data"].notna()
+            & df["Empresa"].notna()
+            & df["codigo_cliente"].notna()
+            & df["Cliente"].notna()
+        ].copy()
+
+        if df.empty:
+            return pd.DataFrame(columns=columns)
+
+        df["sale_date"] = df["Data"].dt.date
+
+        def aggregate(base_df, group_columns, empresa_value=None):
+
+            result = (
+                base_df
+                .sort_values(
+                    [
+                        "sale_date",
+                        "Empresa",
+                        "codigo_cliente",
+                        "Cliente"
+                    ],
+                    ascending=True
+                )
+                .groupby(
+                    group_columns,
+                    dropna=False,
+                    as_index=False
+                )
+                .agg(
+                    Cliente=(
+                        "Cliente",
+                        "first"
+                    ),
+                    faturamento_total=(
+                        "Valor_total_Unitario",
+                        "sum"
+                    ),
+                    pedidos=(
+                        "numero_pedido",
+                        "nunique"
+                    ),
+                    itens_vendidos=(
+                        "codigo_item",
+                        "count"
+                    ),
+                    mix_produtos=(
+                        "prod_codigo",
+                        "nunique"
+                    )
+                )
+            )
+
+            if empresa_value is not None:
+                result["Empresa"] = empresa_value
+
+            result["ultima_compra"] = result["sale_date"]
+
+            return result
+
+        by_company = aggregate(
+            df,
+            [
+                "sale_date",
+                "Empresa",
+                "codigo_cliente"
+            ]
+        )
+
+        total = aggregate(
+            df,
+            [
+                "sale_date",
+                "codigo_cliente"
+            ],
+            empresa_value="TOTAL"
+        )
+
+        daily = pd.concat(
+            [
+                total,
+                by_company
+            ],
+            ignore_index=True,
+            sort=False
+        )
+
+        daily["codigo_cliente"] = (
+            daily["codigo_cliente"]
+            .astype(str)
+            .str.strip()
+        )
+
+        daily["Cliente"] = (
+            daily["Cliente"]
+            .astype(str)
+            .str.strip()
+        )
+
+        daily["Empresa"] = (
+            daily["Empresa"]
+            .astype(str)
+            .str.strip()
+        )
+
+        daily = daily[
+            daily["codigo_cliente"].ne("")
+            & daily["Cliente"].ne("")
+            & daily["Empresa"].ne("")
+        ].copy()
+
+        daily = (
+            daily
+            .sort_values(
+                [
+                    "sale_date",
+                    "Empresa",
+                    "codigo_cliente"
+                ],
+                ascending=True
+            )
+            .drop_duplicates(
+                subset=[
+                    "sale_date",
+                    "Empresa",
+                    "codigo_cliente"
+                ],
+                keep="first"
+            )
+            .reset_index(drop=True)
+        )
+
+        return daily[columns]
+
+    def _save_customer_daily(
+        self,
+        customer_daily_df,
+        reference_date
+    ):
+
+        filters = {
+            "reference_date": reference_date
+        }
+
+        records = []
+
+        if (
+            customer_daily_df is not None
+            and not customer_daily_df.empty
+        ):
+            for _, row in customer_daily_df.iterrows():
+
+                sale_date = pd.to_datetime(
+                    row["sale_date"],
+                    errors="coerce"
+                )
+
+                if pd.isna(sale_date):
+                    continue
+
+                ultima_compra = pd.to_datetime(
+                    row["ultima_compra"],
+                    errors="coerce"
+                )
+
+                records.append({
+                    "reference_date": reference_date,
+                    "sale_date": sale_date.date().isoformat(),
+                    "empresa": row["Empresa"],
+                    "codigo_cliente": str(
+                        row["codigo_cliente"]
+                    ),
+                    "cliente": row["Cliente"],
+                    "faturamento_total": round(
+                        float(row["faturamento_total"]),
+                        2
+                    ),
+                    "pedidos": int(row["pedidos"]),
+                    "itens_vendidos": int(
+                        row["itens_vendidos"]
+                    ),
+                    "mix_produtos": int(
+                        row["mix_produtos"]
+                    ),
+                    "ultima_compra": (
+                        None
+                        if pd.isna(ultima_compra)
+                        else ultima_compra.date().isoformat()
+                    )
+                })
+
+        print(
+            "  Publicando clientes diários: "
+            f"{len(records):,} registros"
+        )
+
+        self.supabase.replace_snapshot_batches(
+            "mart_sales_customer_daily",
+            filters,
+            records,
+            batch_size=500
+        )
+
+        return len(records)
 
     def _normalize_categories(self, category_df):
 
