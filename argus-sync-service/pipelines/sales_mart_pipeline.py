@@ -10,6 +10,7 @@ from features.sales.category_performance import CategoryPerformance
 from features.sales.seller_pace import SellerPace
 from features.sales.seller_arena import SellerArena
 from features.sales.seller_scorecards import SellerScorecards
+from features.sales.seller_insights import SellerInsights
 
 
 class SalesMartPipeline:
@@ -50,6 +51,11 @@ class SalesMartPipeline:
         )
 
         seller_df = SellerScorecards().build(
+            seller_df=seller_df,
+            period_type=period_type,
+        )
+
+        seller_df = SellerInsights().build(
             seller_df=seller_df,
             period_type=period_type,
         )
@@ -1365,6 +1371,52 @@ class SalesMartPipeline:
                             )
                         )
                         or "Crítico"
+                    ),
+                                        "seller_insights": (
+                        None
+                        if pd.isna(
+                            row.get("seller_insights")
+                        )
+                        else json.loads(
+                            row.get("seller_insights")
+                        )
+                    ),
+                    "seller_primary_insight": (
+                        optional_text(
+                            row.get(
+                                "seller_primary_insight"
+                            )
+                        )
+                    ),
+                    "seller_primary_support": (
+                        optional_text(
+                            row.get(
+                                "seller_primary_support"
+                            )
+                        )
+                    ),
+                    "seller_primary_severity": (
+                        optional_text(
+                            row.get(
+                                "seller_primary_severity"
+                            )
+                        )
+                        or "neutral"
+                    ),
+                    "seller_recommended_action": (
+                        optional_text(
+                            row.get(
+                                "seller_recommended_action"
+                            )
+                        )
+                    ),
+                    "seller_insight_count": (
+                        optional_int(
+                            row.get(
+                                "seller_insight_count"
+                            )
+                        )
+                        or 0
                     )
                 })
 

@@ -408,14 +408,21 @@ class CustomerGeoPipeline:
                     float(faturamento_total),
                     2
                 ),
-                "customer_tier": row.get(
-                    "customer_tier"
+                "customer_tier": (
+                    None
+                    if pd.isna(row.get("customer_tier"))
+                    else str(row.get("customer_tier")).strip()
                 ),
-                "cliente_status": row.get(
-                    "cliente_status"
+                "cliente_status": (
+                    None
+                    if pd.isna(row.get("cliente_status"))
+                    else str(row.get("cliente_status")).strip()
                 ),
-                "evolution_status": row.get(
-                    "evolution_status"
+
+                "evolution_status": (
+                    None
+                    if pd.isna(row.get("evolution_status"))
+                    else str(row.get("evolution_status")).strip()
                 ),
                 "dias_sem_compra": (
                     None
