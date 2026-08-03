@@ -7,6 +7,7 @@ from features.sales.product_performance import ProductPerformance
 from features.sales.customer_performance import CustomerPerformance
 from features.sales.category_performance import CategoryPerformance
 from features.sales.seller_pace import SellerPace
+from features.sales.seller_arena import SellerArena
 
 
 class SalesMartPipeline:
@@ -37,6 +38,11 @@ class SalesMartPipeline:
         seller_df = SellerPace(
             reference_date=hoje.date()
         ).build(
+            seller_df=seller_df,
+            period_type=period_type,
+        )
+
+        seller_df = SellerArena().build(
             seller_df=seller_df,
             period_type=period_type,
         )
@@ -1080,6 +1086,15 @@ class SalesMartPipeline:
 
             return int(value)
 
+        def optional_text(value):
+
+            if value is None or pd.isna(value):
+                return None
+
+            text = str(value).strip()
+
+            return text if text else None
+
         records = []
 
         if seller_df is not None and not seller_df.empty:
@@ -1254,9 +1269,62 @@ class SalesMartPipeline:
                             False
                         )
                     ),
-                    "status_projecao": row.get(
+                                        "status_projecao": row.get(
                         "status_projecao",
                         "nao_aplicavel"
+                    ),
+                    "arena_position": (
+                        optional_int(
+                            row.get(
+                                "arena_position"
+                            )
+                        )
+                    ),
+                    "arena_score": (
+                        optional_float(
+                            row.get(
+                                "arena_score"
+                            ),
+                            decimals=6
+                        )
+                    ),
+                    "arena_medal": (
+                        optional_text(
+                            row.get("arena_medal")
+                        )
+                    ),
+                    "arena_level": (
+                        optional_text(
+                            row.get("arena_level")
+                        )
+                    ),
+                    "arena_gap_first_pp": (
+                        optional_float(
+                            row.get(
+                                "arena_gap_first_pp"
+                            )
+                        )
+                    ),
+                    "arena_gap_next_pp": (
+                        optional_float(
+                            row.get(
+                                "arena_gap_next_pp"
+                            )
+                        )
+                    ),
+                    "arena_is_leader": (
+                        False
+                        if pd.isna(
+                            row.get("arena_is_leader")
+                        )
+                        else bool(
+                            row.get("arena_is_leader")
+                        )
+                    ),
+                    "arena_highlight": (
+                        optional_text(
+                            row.get("arena_highlight")
+                        )
                     )
                 })
 
