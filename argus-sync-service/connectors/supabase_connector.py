@@ -47,6 +47,11 @@ class SupabaseConnector:
         if not data:
             return []
 
+        if batch_size <= 0:
+            raise ValueError(
+                "batch_size deve ser maior que zero."
+            )
+
         responses = []
 
         for start in range(
@@ -147,6 +152,10 @@ class SupabaseConnector:
 
             selection = (
                 select_query
+                .order(
+                    id_column,
+                    desc=False
+                )
                 .limit(batch_size)
                 .execute()
             )

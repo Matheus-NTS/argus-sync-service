@@ -571,30 +571,36 @@ class ProfitabilityPipeline:
             delete_batch_size=250
         )
 
-        self.supabase.replace_snapshot_batches(
+        self.supabase.replace_snapshot_batches_paginated_delete(
             "mart_profitability_dimension_snapshot",
             filters,
             dimension_records,
-            batch_size=500
+            batch_size=500,
+            delete_batch_size=250
         )
 
-        self.supabase.replace_snapshot_batches(
+        self.supabase.replace_snapshot_batches_paginated_delete(
             "mart_profitability_risk",
             filters,
             risk_records,
-            batch_size=500
+            batch_size=500,
+            delete_batch_size=250
         )
 
-        self.supabase.replace_snapshot(
+        self.supabase.replace_snapshot_batches_paginated_delete(
             "mart_profitability_recommendation",
             filters,
-            recommendation_records
+            recommendation_records,
+            batch_size=500,
+            delete_batch_size=250
         )
 
-        self.supabase.replace_snapshot(
+        self.supabase.replace_snapshot_batches_paginated_delete(
             "mart_profitability_quality_snapshot",
             filters,
-            quality_records
+            quality_records,
+            batch_size=500,
+            delete_batch_size=250
         )
 
     def run(self):
