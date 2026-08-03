@@ -6,6 +6,7 @@ from features.sales.company_performance import CompanyPerformance
 from features.sales.product_performance import ProductPerformance
 from features.sales.customer_performance import CustomerPerformance
 from features.sales.category_performance import CategoryPerformance
+from features.sales.seller_pace import SellerPace
 
 
 class SalesMartPipeline:
@@ -30,6 +31,13 @@ class SalesMartPipeline:
         seller_df = SellerPerformance().build(
             pedidos_df=pedidos,
             meta_df=meta_df,
+            period_type=period_type,
+        )
+
+        seller_df = SellerPace(
+            reference_date=hoje.date()
+        ).build(
+            seller_df=seller_df,
             period_type=period_type,
         )
 
@@ -1055,22 +1063,28 @@ class SalesMartPipeline:
         filters
     ):
 
+        def optional_float(value, decimals=2):
+
+            if value is None or pd.isna(value):
+                return None
+
+            return round(
+                float(value),
+                decimals
+            )
+
+        def optional_int(value):
+
+            if value is None or pd.isna(value):
+                return None
+
+            return int(value)
+
         records = []
 
         if seller_df is not None and not seller_df.empty:
 
             for _, row in seller_df.iterrows():
-
-                ranking_atingimento = row.get(
-                    "ranking_atingimento"
-                )
-
-                if pd.isna(ranking_atingimento):
-                    ranking_atingimento = None
-                else:
-                    ranking_atingimento = int(
-                        ranking_atingimento
-                    )
 
                 records.append({
                     "reference_date": (
@@ -1079,6 +1093,7 @@ class SalesMartPipeline:
                     "period_type": (
                         filters["period_type"]
                     ),
+
                     "seller_key": row["seller_key"],
                     "vendedor": row["Vendedor"],
 
@@ -1158,11 +1173,90 @@ class SalesMartPipeline:
 
                     "status_meta": row["status_meta"],
 
-                    "ranking_faturamento": int(
-                        row["ranking_faturamento"]
+                    "ranking_faturamento": (
+                        optional_int(
+                            row.get(
+                                "ranking_faturamento"
+                            )
+                        )
                     ),
                     "ranking_atingimento": (
-                        ranking_atingimento
+                        optional_int(
+                            row.get(
+                                "ranking_atingimento"
+                            )
+                        )
+                    ),
+
+                    "pace_applicable": bool(
+                        row.get(
+                            "pace_applicable",
+                            False
+                        )
+                    ),
+                    "dias_uteis_mes": (
+                        optional_int(
+                            row.get(
+                                "dias_uteis_mes"
+                            )
+                        )
+                    ),
+                    "dias_uteis_decorridos": (
+                        optional_int(
+                            row.get(
+                                "dias_uteis_decorridos"
+                            )
+                        )
+                    ),
+                    "dias_uteis_restantes": (
+                        optional_int(
+                            row.get(
+                                "dias_uteis_restantes"
+                            )
+                        )
+                    ),
+
+                    "meta_diaria": (
+                        optional_float(
+                            row.get("meta_diaria")
+                        )
+                    ),
+                    "ritmo_atual": (
+                        optional_float(
+                            row.get("ritmo_atual")
+                        )
+                    ),
+                    "ritmo_necessario": (
+                        optional_float(
+                            row.get(
+                                "ritmo_necessario"
+                            )
+                        )
+                    ),
+                    "projecao_fechamento": (
+                        optional_float(
+                            row.get(
+                                "projecao_fechamento"
+                            )
+                        )
+                    ),
+                    "projecao_atingimento": (
+                        optional_float(
+                            row.get(
+                                "projecao_atingimento"
+                            ),
+                            decimals=6
+                        )
+                    ),
+                    "projecao_atinge_meta": bool(
+                        row.get(
+                            "projecao_atinge_meta",
+                            False
+                        )
+                    ),
+                    "status_projecao": row.get(
+                        "status_projecao",
+                        "nao_aplicavel"
                     )
                 })
 
