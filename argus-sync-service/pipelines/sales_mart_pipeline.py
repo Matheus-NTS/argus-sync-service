@@ -37,6 +37,7 @@ class SalesMartPipeline:
 
         customer_daily_records = 0
         product_daily_records = 0
+        category_daily_records = 0
 
         if period_type == "historico":
             customer_daily_df = self._build_customer_daily(pedidos)
@@ -48,6 +49,12 @@ class SalesMartPipeline:
             product_daily_df = self._build_product_daily(pedidos)
             product_daily_records = self._save_product_daily(
                 product_daily_df,
+                reference_date=filters["reference_date"]
+            )
+
+            category_daily_df = self._build_category_daily(pedidos)
+            category_daily_records = self._save_category_daily(
+                category_daily_df,
                 reference_date=filters["reference_date"]
             )
 
@@ -65,7 +72,8 @@ class SalesMartPipeline:
             "customer_df_all": customer_df_all,
             "category_df_all": category_df_all,
             "customer_daily_records": customer_daily_records,
-            "product_daily_records": product_daily_records
+            "product_daily_records": product_daily_records,
+            "category_daily_records": category_daily_records
         }
 
     def _normalize_products(self, product_df):
@@ -139,6 +147,258 @@ class SalesMartPipeline:
             )
 
         return result
+
+    def _build_category_daily(self, pedidos):
+
+        columns = [
+            "sale_date",
+            "Empresa",
+            "categoria",
+            "faturamento_total",
+            "pedidos",
+            "itens_vendidos",
+            "clientes",
+            "produtos"
+        ]
+
+        if pedidos is None or pedidos.empty:
+            return pd.DataFrame(columns=columns)
+
+        category_column = self._first_existing_column(
+            pedidos,
+            [
+                "Classificacao",
+                "classificacao",
+                "Classificação"
+            ]
+        )
+
+        if category_column is None:
+            raise KeyError(
+                "Não foi possível gerar mart_sales_category_daily. "
+                "Nenhuma coluna de classificação foi encontrada."
+            )
+
+        required_columns = [
+            "Data",
+            "Empresa",
+            category_column,
+            "Valor_total_Unitario",
+            "numero_pedido",
+            "codigo_item",
+            "codigo_cliente",
+            "prod_codigo"
+        ]
+
+        missing_columns = [
+            column
+            for column in required_columns
+            if column not in pedidos.columns
+        ]
+
+        if missing_columns:
+            raise KeyError(
+                "Não foi possível gerar mart_sales_category_daily. "
+                "Colunas ausentes: "
+                + ", ".join(missing_columns)
+            )
+
+        df = pedidos[required_columns].copy()
+
+        df["Data"] = pd.to_datetime(
+            df["Data"],
+            errors="coerce"
+        )
+
+        df["Valor_total_Unitario"] = pd.to_numeric(
+            df["Valor_total_Unitario"],
+            errors="coerce"
+        ).fillna(0)
+
+        df["categoria"] = (
+            df[category_column]
+            .fillna("SEM CLASSIFICACAO")
+            .astype(str)
+            .str.strip()
+        )
+
+        df.loc[
+            df["categoria"].eq(""),
+            "categoria"
+        ] = "SEM CLASSIFICACAO"
+
+        df = df[
+            df["Data"].notna()
+            & df["Empresa"].notna()
+            & df["categoria"].notna()
+        ].copy()
+
+        if df.empty:
+            return pd.DataFrame(columns=columns)
+
+        df["sale_date"] = df["Data"].dt.date
+
+        def aggregate(base_df, group_columns, empresa_value=None):
+
+            result = (
+                base_df
+                .groupby(
+                    group_columns,
+                    dropna=False,
+                    as_index=False
+                )
+                .agg(
+                    faturamento_total=(
+                        "Valor_total_Unitario",
+                        "sum"
+                    ),
+                    pedidos=(
+                        "numero_pedido",
+                        "nunique"
+                    ),
+                    itens_vendidos=(
+                        "codigo_item",
+                        "count"
+                    ),
+                    clientes=(
+                        "codigo_cliente",
+                        "nunique"
+                    ),
+                    produtos=(
+                        "prod_codigo",
+                        "nunique"
+                    )
+                )
+            )
+
+            if empresa_value is not None:
+                result["Empresa"] = empresa_value
+
+            return result
+
+        by_company = aggregate(
+            df,
+            [
+                "sale_date",
+                "Empresa",
+                "categoria"
+            ]
+        )
+
+        total = aggregate(
+            df,
+            [
+                "sale_date",
+                "categoria"
+            ],
+            empresa_value="TOTAL"
+        )
+
+        daily = pd.concat(
+            [
+                total,
+                by_company
+            ],
+            ignore_index=True,
+            sort=False
+        )
+
+        daily["Empresa"] = (
+            daily["Empresa"]
+            .astype(str)
+            .str.strip()
+        )
+
+        daily["categoria"] = (
+            daily["categoria"]
+            .astype(str)
+            .str.strip()
+        )
+
+        daily = daily[
+            daily["Empresa"].ne("")
+            & daily["categoria"].ne("")
+        ].copy()
+
+        daily = (
+            daily
+            .sort_values(
+                [
+                    "sale_date",
+                    "Empresa",
+                    "categoria"
+                ],
+                ascending=True
+            )
+            .drop_duplicates(
+                subset=[
+                    "sale_date",
+                    "Empresa",
+                    "categoria"
+                ],
+                keep="first"
+            )
+            .reset_index(drop=True)
+        )
+
+        return daily[columns]
+
+    def _save_category_daily(
+        self,
+        category_daily_df,
+        reference_date
+    ):
+
+        filters = {
+            "reference_date": reference_date
+        }
+
+        records = []
+
+        if (
+            category_daily_df is not None
+            and not category_daily_df.empty
+        ):
+            for _, row in category_daily_df.iterrows():
+
+                sale_date = pd.to_datetime(
+                    row["sale_date"],
+                    errors="coerce"
+                )
+
+                if pd.isna(sale_date):
+                    continue
+
+                records.append({
+                    "reference_date": reference_date,
+                    "sale_date": sale_date.date().isoformat(),
+                    "empresa": row["Empresa"],
+                    "categoria": row["categoria"],
+                    "faturamento_total": round(
+                        float(row["faturamento_total"]),
+                        2
+                    ),
+                    "pedidos": int(row["pedidos"]),
+                    "itens_vendidos": int(
+                        row["itens_vendidos"]
+                    ),
+                    "clientes": int(row["clientes"]),
+                    "produtos": int(row["produtos"])
+                })
+
+        print(
+            "  Publicando categorias diárias: "
+            f"{len(records):,} registros"
+        )
+
+        self.supabase.replace_snapshot_batches(
+            "mart_sales_category_daily",
+            filters,
+            records,
+            batch_size=500
+        )
+
+        return len(records)
 
     @staticmethod
     def _first_existing_column(dataframe, candidates):
