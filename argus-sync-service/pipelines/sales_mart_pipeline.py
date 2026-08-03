@@ -1,5 +1,6 @@
 from datetime import datetime
 import pandas as pd
+import json
 
 from features.sales.seller_performance import SellerPerformance
 from features.sales.company_performance import CompanyPerformance
@@ -8,6 +9,7 @@ from features.sales.customer_performance import CustomerPerformance
 from features.sales.category_performance import CategoryPerformance
 from features.sales.seller_pace import SellerPace
 from features.sales.seller_arena import SellerArena
+from features.sales.seller_scorecards import SellerScorecards
 
 
 class SalesMartPipeline:
@@ -43,6 +45,11 @@ class SalesMartPipeline:
         )
 
         seller_df = SellerArena().build(
+            seller_df=seller_df,
+            period_type=period_type,
+        )
+
+        seller_df = SellerScorecards().build(
             seller_df=seller_df,
             period_type=period_type,
         )
@@ -1325,6 +1332,39 @@ class SalesMartPipeline:
                         optional_text(
                             row.get("arena_highlight")
                         )
+                    ),
+                        "seller_scorecards": (
+                        None
+                        if pd.isna(
+                            row.get("seller_scorecards")
+                        )
+                        else json.loads(
+                            row.get("seller_scorecards")
+                        )
+                    ),
+                    "seller_health_score": (
+                        optional_float(
+                            row.get(
+                                "seller_health_score"
+                            )
+                        )
+                        or 0
+                    ),
+                    "seller_health_status": (
+                        optional_text(
+                            row.get(
+                                "seller_health_status"
+                            )
+                        )
+                        or "critical"
+                    ),
+                    "seller_health_label": (
+                        optional_text(
+                            row.get(
+                                "seller_health_label"
+                            )
+                        )
+                        or "Crítico"
                     )
                 })
 
