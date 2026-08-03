@@ -5,7 +5,7 @@ from config.periods import MVP_PERIODS, resolve_window
 
 from extractors.pedido_extractor import PedidoExtractor
 from transformers.pedido_transformer import PedidoTransformer
-
+from extractors.meta_extractor import MetaExtractor
 from pipelines.sales_mart_pipeline import SalesMartPipeline
 from pipelines.commercial_intelligence_pipeline import CommercialIntelligencePipeline
 from pipelines.sales_history_pipeline import SalesHistoryPipeline
@@ -28,6 +28,10 @@ class SalesPipeline:
 
         pedidos["Data"] = pd.to_datetime(pedidos["Data"], errors="coerce")
         pedidos = pedidos[pedidos["Data"].notna()].copy()
+
+        meta_df = MetaExtractor(
+            self.sql_connector
+        ).extract()
 
         sales_marts = SalesMartPipeline(self.supabase)
         intelligence = CommercialIntelligencePipeline(self.supabase)
@@ -69,6 +73,7 @@ class SalesPipeline:
 
             mart_result = sales_marts.run(
                 pedidos_periodo,
+                meta_df=meta_df,
                 period_type=period_type
             )
 
@@ -82,6 +87,11 @@ class SalesPipeline:
             )
 
             period_results[period_type] = {
+                                "commercial_sellers": (
+                    mart_result[
+                        "commercial_seller_records"
+                    ]
+                ),
                 "seller_ranking": len(mart_result["seller_df"]),
                 "companies": len(mart_result["company_df"]),
                 "products": len(mart_result["product_df"]),
@@ -99,6 +109,11 @@ class SalesPipeline:
 
         return {
             "seller_ranking": len(current_month_result["seller_df"]),
+                        "commercial_sellers": (
+                current_month_result[
+                    "commercial_seller_records"
+                ]
+            ),
             "companies": len(current_month_result["company_df"]),
             "products": len(current_month_result["product_df"]),
             "customers": len(current_month_result["customer_df"]),

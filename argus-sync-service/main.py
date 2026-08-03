@@ -73,6 +73,10 @@ def main():
         f"  Ranking: "
         f"{sales_result['seller_ranking']} vendedores"
     )
+    print(
+        f"  Seller Intelligence: "
+        f"{sales_result['commercial_sellers']} vendedores"
+    )
     print(f"  Empresas: {sales_result['companies']}")
     print(f"  Produtos: {sales_result['products']}")
     print(f"  Clientes: {sales_result['customers']}")

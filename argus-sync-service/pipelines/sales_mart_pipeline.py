@@ -1,7 +1,7 @@
 from datetime import datetime
 import pandas as pd
 
-from features.sales.seller_ranking import SellerRanking
+from features.sales.seller_performance import SellerPerformance
 from features.sales.company_performance import CompanyPerformance
 from features.sales.product_performance import ProductPerformance
 from features.sales.customer_performance import CustomerPerformance
@@ -13,7 +13,12 @@ class SalesMartPipeline:
     def __init__(self, supabase_connector):
         self.supabase = supabase_connector
 
-    def run(self, pedidos, period_type="current_month"):
+    def run(
+        self,
+        pedidos,
+        meta_df=None,
+        period_type="current_month"
+    ):
 
         hoje = datetime.today()
 
@@ -22,7 +27,12 @@ class SalesMartPipeline:
             "period_type": period_type
         }
 
-        seller_df = SellerRanking().build(pedidos)
+        seller_df = SellerPerformance().build(
+            pedidos_df=pedidos,
+            meta_df=meta_df,
+            period_type=period_type,
+        )
+
         company_df = CompanyPerformance().build(pedidos)
 
         product_df_all = self._normalize_products(ProductPerformance().build(pedidos))
@@ -30,6 +40,13 @@ class SalesMartPipeline:
         category_df_all = self._normalize_categories(CategoryPerformance().build(pedidos))
 
         self._save_sellers(seller_df, filters)
+
+        commercial_seller_records = (
+            self._save_commercial_sellers(
+                seller_df,
+                filters
+            )
+        )
         self._save_companies(company_df, filters)
         self._save_products(product_df_all, filters)
         self._save_customers(customer_df_all, filters)
@@ -64,6 +81,7 @@ class SalesMartPipeline:
 
         return {
             "seller_df": seller_df,
+            "commercial_seller_records": commercial_seller_records,
             "company_df": company_df,
             "product_df": product_df_total,
             "customer_df": customer_df_total,
@@ -1030,6 +1048,137 @@ class SalesMartPipeline:
             })
 
         self.supabase.replace_snapshot("sales_seller_ranking_snapshot", filters, seller_records)
+
+    def _save_commercial_sellers(
+        self,
+        seller_df,
+        filters
+    ):
+
+        records = []
+
+        if seller_df is not None and not seller_df.empty:
+
+            for _, row in seller_df.iterrows():
+
+                ranking_atingimento = row.get(
+                    "ranking_atingimento"
+                )
+
+                if pd.isna(ranking_atingimento):
+                    ranking_atingimento = None
+                else:
+                    ranking_atingimento = int(
+                        ranking_atingimento
+                    )
+
+                records.append({
+                    "reference_date": (
+                        filters["reference_date"]
+                    ),
+                    "period_type": (
+                        filters["period_type"]
+                    ),
+                    "seller_key": row["seller_key"],
+                    "vendedor": row["Vendedor"],
+
+                    "faturamento_total": round(
+                        float(row["faturamento_total"]),
+                        2
+                    ),
+                    "pedidos": int(row["pedidos"]),
+                    "itens_vendidos": int(
+                        row["itens_vendidos"]
+                    ),
+                    "clientes": int(row["clientes"]),
+                    "mix_produtos": int(
+                        row["mix_produtos"]
+                    ),
+                    "ticket_medio": round(
+                        float(row["ticket_medio"]),
+                        2
+                    ),
+
+                    "empresa_breakdown": (
+                        row["empresa_breakdown"]
+                    ),
+
+                    "meta_mensal": round(
+                        float(row["meta_mensal"]),
+                        2
+                    ),
+                    "supermeta": round(
+                        float(row["supermeta"]),
+                        2
+                    ),
+                    "hipermeta": round(
+                        float(row["hipermeta"]),
+                        2
+                    ),
+
+                    "atingimento": round(
+                        float(row["atingimento"]),
+                        6
+                    ),
+                    "atingimento_supermeta": round(
+                        float(
+                            row["atingimento_supermeta"]
+                        ),
+                        6
+                    ),
+                    "atingimento_hipermeta": round(
+                        float(
+                            row["atingimento_hipermeta"]
+                        ),
+                        6
+                    ),
+
+                    "gap_meta": round(
+                        float(row["gap_meta"]),
+                        2
+                    ),
+                    "gap_supermeta": round(
+                        float(row["gap_supermeta"]),
+                        2
+                    ),
+                    "gap_hipermeta": round(
+                        float(row["gap_hipermeta"]),
+                        2
+                    ),
+
+                    "meta_valida": bool(
+                        row["meta_valida"]
+                    ),
+                    "meta_batida": bool(
+                        row["meta_batida"]
+                    ),
+                    "arena_eligible": bool(
+                        row["arena_eligible"]
+                    ),
+
+                    "status_meta": row["status_meta"],
+
+                    "ranking_faturamento": int(
+                        row["ranking_faturamento"]
+                    ),
+                    "ranking_atingimento": (
+                        ranking_atingimento
+                    )
+                })
+
+        print(
+            "  Publicando Seller Intelligence: "
+            f"{len(records):,} registros "
+            f"({filters['period_type']})"
+        )
+
+        self.supabase.replace_snapshot(
+            "mart_commercial_seller_snapshot",
+            filters,
+            records
+        )
+
+        return len(records)
 
     def _save_companies(self, company_df, filters):
 
