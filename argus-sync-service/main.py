@@ -8,6 +8,7 @@ from pipelines.stock_pipeline import StockPipeline
 from pipelines.customer_geo_pipeline import CustomerGeoPipeline
 from pipelines.lost_sales_pipeline import LostSalesPipeline
 from pipelines.profitability_pipeline import ProfitabilityPipeline
+from services.pipeline_state import mark_pipeline_success
 
 
 def main():
@@ -26,11 +27,21 @@ def main():
     )
     sales_result = sales.run()
 
+    mark_pipeline_success(
+    supabase_connector,
+    "sales",
+    )
+
     customer_geo = CustomerGeoPipeline(
         sql_connector,
         supabase_connector
     )
     customer_geo_result = customer_geo.run()
+
+    mark_pipeline_success(
+    supabase_connector,
+    "customer_geo",
+    )
 
     stock = StockPipeline(
         sql_connector,
@@ -38,17 +49,32 @@ def main():
     )
     stock_result = stock.run()
 
+    mark_pipeline_success(
+    supabase_connector,
+    "stock",
+    )
+
     profitability = ProfitabilityPipeline(
         sql_connector,
         supabase_connector
     )
     profitability_result = profitability.run()
 
+    mark_pipeline_success(
+    supabase_connector,
+    "profitability",
+    )
+
     lost_sales = LostSalesPipeline(
         google_sheets_connector,
         supabase_connector
     )
     lost_sales_result = lost_sales.run()
+
+    mark_pipeline_success(
+    supabase_connector,
+    "lost_sales",
+    )
 
     # A IA ARGUS depende das marts publicadas pelos pipelines anteriores.
     # Por isso, o Executive Pipeline deve ser executado por último.
@@ -57,6 +83,11 @@ def main():
         supabase_connector
     )
     executive_result = executive.run()
+
+    mark_pipeline_success(
+    supabase_connector,
+    "executive",
+    )
 
     print()
     print("✓ Executive Pipeline finalizada")
