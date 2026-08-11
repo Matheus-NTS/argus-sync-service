@@ -10,7 +10,10 @@ from features.sales.category_performance import CategoryPerformance
 from features.sales.seller_pace import SellerPace
 from features.sales.seller_arena import SellerArena
 from features.sales.seller_scorecards import SellerScorecards
+from features.sales.seller_benchmarks import SellerBenchmarks
 from features.sales.seller_insights import SellerInsights
+from features.sales.seller_history import SellerHistory
+from features.sales.seller_timeline import SellerTimeline
 
 
 class SalesMartPipeline:
@@ -55,6 +58,11 @@ class SalesMartPipeline:
             period_type=period_type,
         )
 
+        seller_df = SellerBenchmarks().build(
+            seller_df=seller_df,
+            period_type=period_type,
+        )
+
         seller_df = SellerInsights().build(
             seller_df=seller_df,
             period_type=period_type,
@@ -82,6 +90,9 @@ class SalesMartPipeline:
         customer_daily_records = 0
         product_daily_records = 0
         category_daily_records = 0
+        seller_daily_records = 0
+        seller_monthly_records = 0
+        seller_timeline_records = 0
 
         if period_type == "historico":
             customer_daily_df = self._build_customer_daily(pedidos)
@@ -102,6 +113,36 @@ class SalesMartPipeline:
                 reference_date=filters["reference_date"]
             )
 
+            seller_history = SellerHistory()
+
+            seller_daily_df = seller_history.build_daily(
+                pedidos_df=pedidos
+            )
+            seller_daily_records = self._save_seller_daily(
+                seller_daily_df=seller_daily_df,
+                reference_date=filters["reference_date"]
+            )
+
+            seller_monthly_df = seller_history.build_monthly(
+                pedidos_df=pedidos,
+                meta_df=meta_df,
+                reference_date=hoje.date()
+            )
+            seller_monthly_records = self._save_seller_monthly(
+                seller_monthly_df=seller_monthly_df,
+                reference_date=filters["reference_date"]
+            )
+
+            seller_timeline_df = SellerTimeline().build(
+                monthly_df=seller_monthly_df,
+                reference_date=hoje.date(),
+                include_current_month=False
+            )
+            seller_timeline_records = self._save_seller_timeline(
+                seller_timeline_df=seller_timeline_df,
+                reference_date=filters["reference_date"]
+            )
+
         product_df_total = product_df_all[product_df_all["Empresa"] == "TOTAL"].copy()
         customer_df_total = customer_df_all[customer_df_all["Empresa"] == "TOTAL"].copy()
         category_df_total = category_df_all[category_df_all["Empresa"] == "TOTAL"].copy()
@@ -118,8 +159,327 @@ class SalesMartPipeline:
             "category_df_all": category_df_all,
             "customer_daily_records": customer_daily_records,
             "product_daily_records": product_daily_records,
-            "category_daily_records": category_daily_records
+            "category_daily_records": category_daily_records,
+            "seller_daily_records": seller_daily_records,
+            "seller_monthly_records": seller_monthly_records,
+            "seller_timeline_records": seller_timeline_records
         }
+
+
+    def _save_seller_daily(
+        self,
+        seller_daily_df,
+        reference_date
+    ):
+
+        filters = {
+            "reference_date": reference_date
+        }
+
+        records = []
+
+        if (
+            seller_daily_df is not None
+            and not seller_daily_df.empty
+        ):
+            for _, row in seller_daily_df.iterrows():
+
+                sale_date = pd.to_datetime(
+                    row["sale_date"],
+                    errors="coerce"
+                )
+
+                if pd.isna(sale_date):
+                    continue
+
+                records.append({
+                    "reference_date": reference_date,
+                    "sale_date": sale_date.date().isoformat(),
+                    "seller_key": row["seller_key"],
+                    "vendedor": row["Vendedor"],
+                    "empresa": row["Empresa"],
+                    "faturamento_total": round(
+                        float(row["faturamento_total"]),
+                        2
+                    ),
+                    "pedidos": int(row["pedidos"]),
+                    "itens_vendidos": int(
+                        row["itens_vendidos"]
+                    ),
+                    "clientes": int(row["clientes"]),
+                    "mix_produtos": int(
+                        row["mix_produtos"]
+                    ),
+                    "ticket_medio": round(
+                        float(row["ticket_medio"]),
+                        2
+                    )
+                })
+
+        print(
+            "  Publicando vendedores diários: "
+            f"{len(records):,} registros"
+        )
+
+        self.supabase.replace_snapshot_batches(
+            "mart_commercial_seller_daily",
+            filters,
+            records,
+            batch_size=500
+        )
+
+        return len(records)
+
+    def _save_seller_monthly(
+        self,
+        seller_monthly_df,
+        reference_date
+    ):
+
+        filters = {
+            "reference_date": reference_date
+        }
+
+        records = []
+
+        if (
+            seller_monthly_df is not None
+            and not seller_monthly_df.empty
+        ):
+            for _, row in seller_monthly_df.iterrows():
+
+                month_start = pd.to_datetime(
+                    row["month_start"],
+                    errors="coerce"
+                )
+
+                if pd.isna(month_start):
+                    continue
+
+                scorecards = row.get(
+                    "seller_scorecards"
+                )
+
+                if (
+                    scorecards is not None
+                    and not isinstance(
+                        scorecards,
+                        dict
+                    )
+                ):
+                    try:
+                        scorecards = json.loads(
+                            scorecards
+                        )
+                    except (
+                        TypeError,
+                        json.JSONDecodeError
+                    ):
+                        scorecards = None
+
+                records.append({
+                    "reference_date": reference_date,
+                    "month_start": (
+                        month_start.date().isoformat()
+                    ),
+                    "seller_key": row["seller_key"],
+                    "vendedor": row["Vendedor"],
+                    "empresa": row["Empresa"],
+                    "faturamento_total": round(
+                        float(row["faturamento_total"]),
+                        2
+                    ),
+                    "meta": round(
+                        float(row["meta"]),
+                        2
+                    ),
+                    "supermeta": round(
+                        float(row["supermeta"]),
+                        2
+                    ),
+                    "hipermeta": round(
+                        float(row["hipermeta"]),
+                        2
+                    ),
+                    "atingimento": round(
+                        float(row["atingimento"]),
+                        6
+                    ),
+                    "status_meta": row["status_meta"],
+                    "pedidos": int(row["pedidos"]),
+                    "itens_vendidos": int(
+                        row["itens_vendidos"]
+                    ),
+                    "clientes": int(row["clientes"]),
+                    "mix_produtos": int(
+                        row["mix_produtos"]
+                    ),
+                    "ticket_medio": round(
+                        float(row["ticket_medio"]),
+                        2
+                    ),
+                    "ranking_faturamento": (
+                        None
+                        if pd.isna(
+                            row.get(
+                                "ranking_faturamento"
+                            )
+                        )
+                        else int(
+                            row.get(
+                                "ranking_faturamento"
+                            )
+                        )
+                    ),
+                    "ranking_atingimento": (
+                        None
+                        if pd.isna(
+                            row.get(
+                                "ranking_atingimento"
+                            )
+                        )
+                        else int(
+                            row.get(
+                                "ranking_atingimento"
+                            )
+                        )
+                    ),
+                    "arena_position": (
+                        None
+                        if pd.isna(
+                            row.get("arena_position")
+                        )
+                        else int(
+                            row.get("arena_position")
+                        )
+                    ),
+                    "arena_level": (
+                        None
+                        if pd.isna(
+                            row.get("arena_level")
+                        )
+                        else str(
+                            row.get("arena_level")
+                        )
+                    ),
+                    "seller_health_score": (
+                        None
+                        if pd.isna(
+                            row.get(
+                                "seller_health_score"
+                            )
+                        )
+                        else round(
+                            float(
+                                row.get(
+                                    "seller_health_score"
+                                )
+                            ),
+                            2
+                        )
+                    ),
+                    "seller_health_status": (
+                        None
+                        if pd.isna(
+                            row.get(
+                                "seller_health_status"
+                            )
+                        )
+                        else str(
+                            row.get(
+                                "seller_health_status"
+                            )
+                        )
+                    ),
+                    "seller_scorecards": scorecards
+                })
+
+        print(
+            "  Publicando vendedores mensais: "
+            f"{len(records):,} registros"
+        )
+
+        self.supabase.replace_snapshot_batches(
+            "mart_commercial_seller_monthly",
+            filters,
+            records,
+            batch_size=500
+        )
+
+        return len(records)
+
+    def _save_seller_timeline(
+        self,
+        seller_timeline_df,
+        reference_date
+    ):
+
+        filters = {
+            "reference_date": reference_date
+        }
+
+        records = []
+
+        if (
+            seller_timeline_df is not None
+            and not seller_timeline_df.empty
+        ):
+            for _, row in seller_timeline_df.iterrows():
+
+                event_date = pd.to_datetime(
+                    row["event_date"],
+                    errors="coerce"
+                )
+
+                if pd.isna(event_date):
+                    continue
+
+                metadata = row.get("metadata")
+
+                if (
+                    metadata is not None
+                    and not isinstance(
+                        metadata,
+                        dict
+                    )
+                ):
+                    try:
+                        metadata = json.loads(
+                            metadata
+                        )
+                    except (
+                        TypeError,
+                        json.JSONDecodeError
+                    ):
+                        metadata = None
+
+                records.append({
+                    "reference_date": reference_date,
+                    "event_date": (
+                        event_date.date().isoformat()
+                    ),
+                    "seller_key": row["seller_key"],
+                    "vendedor": row["Vendedor"],
+                    "event_type": row["event_type"],
+                    "severity": row["severity"],
+                    "title": row["title"],
+                    "description": row["description"],
+                    "metadata": metadata
+                })
+
+        print(
+            "  Publicando timeline de vendedores: "
+            f"{len(records):,} registros"
+        )
+
+        self.supabase.replace_snapshot_batches(
+            "mart_commercial_seller_timeline",
+            filters,
+            records,
+            batch_size=500
+        )
+
+        return len(records)
 
     def _normalize_products(self, product_df):
 
@@ -1417,6 +1777,46 @@ class SalesMartPipeline:
                             )
                         )
                         or 0
+                    )
+,
+                    "seller_team_benchmark": (
+                        None
+                        if pd.isna(
+                            row.get(
+                                "seller_team_benchmark"
+                            )
+                        )
+                        else json.loads(
+                            row.get(
+                                "seller_team_benchmark"
+                            )
+                        )
+                    ),
+                    "seller_vs_team": (
+                        None
+                        if pd.isna(
+                            row.get(
+                                "seller_vs_team"
+                            )
+                        )
+                        else json.loads(
+                            row.get(
+                                "seller_vs_team"
+                            )
+                        )
+                    ),
+                    "seller_next_opponent": (
+                        None
+                        if pd.isna(
+                            row.get(
+                                "seller_next_opponent"
+                            )
+                        )
+                        else json.loads(
+                            row.get(
+                                "seller_next_opponent"
+                            )
+                        )
                     )
                 })
 

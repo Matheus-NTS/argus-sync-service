@@ -20,12 +20,6 @@ def main():
     supabase_connector = SupabaseConnector()
     google_sheets_connector = GoogleSheetsConnector()
 
-    executive = ExecutivePipeline(
-        sql_connector,
-        supabase_connector
-    )
-    executive_result = executive.run()
-
     sales = SalesPipeline(
         sql_connector,
         supabase_connector
@@ -55,6 +49,14 @@ def main():
         supabase_connector
     )
     lost_sales_result = lost_sales.run()
+
+    # A IA ARGUS depende das marts publicadas pelos pipelines anteriores.
+    # Por isso, o Executive Pipeline deve ser executado por último.
+    executive = ExecutivePipeline(
+        sql_connector,
+        supabase_connector
+    )
+    executive_result = executive.run()
 
     print()
     print("✓ Executive Pipeline finalizada")
@@ -339,6 +341,37 @@ def main():
     print(
         f"  Valor perdido total: R$ "
         f"{lost_sales_result['lost_sales_value']:,.2f}"
+    )
+
+    print()
+    print("✓ IA ARGUS finalizada")
+    print(
+        f"  Briefing: "
+        f"{executive_result['argus_ai_briefing']}"
+    )
+    print(
+        f"  Mudanças: "
+        f"{executive_result['argus_ai_changes']}"
+    )
+    print(
+        f"  Atenções: "
+        f"{executive_result['argus_ai_attention']}"
+    )
+    print(
+        f"  Oportunidades: "
+        f"{executive_result['argus_ai_opportunities']}"
+    )
+    print(
+        f"  Ações: "
+        f"{executive_result['argus_ai_actions']}"
+    )
+    print(
+        f"  Eventos: "
+        f"{executive_result['argus_ai_events']}"
+    )
+    print(
+        f"  Insights legados preservados: "
+        f"{executive_result['insights_count']}"
     )
 
     print()

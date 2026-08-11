@@ -28,6 +28,71 @@ class SupabaseConnector:
             self.key
         )
 
+    def select_rows(
+        self,
+        table_name,
+        columns="*",
+        filters=None,
+        lt_filters=None,
+        lte_filters=None,
+        gt_filters=None,
+        gte_filters=None,
+        order_by=None,
+        descending=False,
+        limit=None
+    ):
+
+        query = (
+            self.client
+            .table(table_name)
+            .select(columns)
+        )
+
+        for column, value in (filters or {}).items():
+            query = query.eq(
+                column,
+                value
+            )
+
+        for column, value in (lt_filters or {}).items():
+            query = query.lt(
+                column,
+                value
+            )
+
+        for column, value in (lte_filters or {}).items():
+            query = query.lte(
+                column,
+                value
+            )
+
+        for column, value in (gt_filters or {}).items():
+            query = query.gt(
+                column,
+                value
+            )
+
+        for column, value in (gte_filters or {}).items():
+            query = query.gte(
+                column,
+                value
+            )
+
+        if order_by:
+            query = query.order(
+                order_by,
+                desc=descending
+            )
+
+        if limit is not None:
+            query = query.limit(
+                limit
+            )
+
+        response = query.execute()
+
+        return response.data or []
+
     def insert(self, table_name, data):
 
         return (

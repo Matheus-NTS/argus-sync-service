@@ -1,17 +1,25 @@
 import pandas as pd
 
 from features.sales.seller_identity import SellerIdentity
+from features.shared.calendar import BusinessCalendar
 
 
 class SellerPerformance:
 
     GOAL_PERIODS = {
-    "current_month",
-    "month_current",
-    "month_previous",
-    "ytd",
-    "ytd_previous",
-}
+        "current_month",
+        "month_current",
+        "month_previous",
+        "today",
+        "yesterday",
+        "ytd",
+        "ytd_previous",
+    }
+
+    DAILY_GOAL_PERIODS = {
+        "today",
+        "yesterday",
+    }
 
     def __init__(self):
 
@@ -554,6 +562,26 @@ class SellerPerformance:
             )
         )
 
+        if period_type in self.DAILY_GOAL_PERIODS:
+            reference_date = last_date.date()
+
+            calendar_summary = (
+                BusinessCalendar()
+                .month_summary(reference_date)
+            )
+
+            business_days_month = int(
+                calendar_summary.dias_uteis_mes
+            )
+
+            if business_days_month > 0:
+                meta["meta"] = (
+                    meta["meta"]
+                    / business_days_month
+                )
+            else:
+                meta["meta"] = 0.0
+
         return meta[columns]
 
     @staticmethod
@@ -715,6 +743,38 @@ class SellerPerformance:
 
         breakdown = {}
 
+        company_benchmarks = (
+            company_performance
+            .groupby(
+                "Empresa",
+                as_index=False,
+            )
+            .agg(
+                team_avg_faturamento=(
+                    "faturamento_total",
+                    "mean",
+                ),
+                team_avg_pedidos=(
+                    "pedidos",
+                    "mean",
+                ),
+                team_avg_clientes=(
+                    "clientes",
+                    "mean",
+                ),
+                team_avg_mix=(
+                    "mix_produtos",
+                    "mean",
+                ),
+            )
+        )
+
+        benchmark_map = (
+            company_benchmarks
+            .set_index("Empresa")
+            .to_dict(orient="index")
+        )
+
         for seller_key, group in company_performance.groupby(
             "seller_key"
         ):
@@ -766,6 +826,30 @@ class SellerPerformance:
                         "status_meta",
                         "sem_meta",
                     ),
+                    "gap_meta": round(
+                        max(
+                            float(
+                                row.get("meta", 0)
+                            )
+                            - float(
+                                row["faturamento_total"]
+                            ),
+                            0,
+                        ),
+                        2,
+                    ),
+                    "team_benchmark": {
+                        key: round(
+                            float(value),
+                            2,
+                        )
+                        for key, value in (
+                            benchmark_map.get(
+                                row["Empresa"],
+                                {},
+                            )
+                        ).items()
+                    },
                 })
 
             breakdown[seller_key] = companies
