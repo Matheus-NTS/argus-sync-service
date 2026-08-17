@@ -1,4 +1,6 @@
+from collections import defaultdict
 from datetime import datetime
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 import pandas as pd
 
@@ -62,6 +64,34 @@ class ProfitabilityPipeline:
         "custo_analisavel", "lucro_analisavel",
         "status_rentabilidade",
     ]
+
+    DETAIL_NUMERIC_SCALES = {
+        "quantidade": 6,
+        "preco_venda_unitario": 6,
+        "preco_venda_medio": 6,
+        "preco_custo": 6,
+        "faturamento": 6,
+        "custo_total": 6,
+        "lucro_bruto": 6,
+        "faturamento_analisavel": 6,
+        "custo_analisavel": 6,
+        "lucro_analisavel": 6,
+        "margem_percentual": 8,
+        "markup_percentual": 8,
+    }
+
+    DETAIL_BOOLEAN_FIELDS = {
+        "empresa_oficial",
+        "produto_fora_escopo",
+        "custo_valido",
+        "dado_suspeito",
+        "elegivel_kpi",
+    }
+
+    DETAIL_INTEGER_FIELDS = {
+        "ano",
+        "mes",
+    }
 
     def __init__(
         self,
@@ -541,6 +571,373 @@ class ProfitabilityPipeline:
 
         return records
 
+    @classmethod
+    def _normalize_detail_sync_value(
+        cls,
+        field,
+        value
+    ):
+        if field in {
+            "reference_date",
+            "data_venda"
+        }:
+            if value is None or pd.isna(value):
+                return "<NULL>"
+
+            parsed = pd.to_datetime(
+                value,
+                errors="coerce"
+            )
+
+            if pd.isna(parsed):
+                return str(value)
+
+            return parsed.date().isoformat()
+
+        if field in cls.DETAIL_NUMERIC_SCALES:
+            if value is None or pd.isna(value):
+                return "<NULL>"
+
+            try:
+                decimal_value = Decimal(
+                    str(value)
+                )
+            except (
+                InvalidOperation,
+                ValueError,
+                TypeError
+            ):
+                return str(value)
+
+            scale = cls.DETAIL_NUMERIC_SCALES[
+                field
+            ]
+
+            quantum = Decimal("1").scaleb(
+                -scale
+            )
+
+            normalized = decimal_value.quantize(
+                quantum,
+                rounding=ROUND_HALF_UP
+            )
+
+            return format(
+                normalized,
+                f".{scale}f"
+            )
+
+        if field in cls.DETAIL_BOOLEAN_FIELDS:
+            if value is None or pd.isna(value):
+                return "<NULL>"
+
+            if isinstance(value, bool):
+                return (
+                    "true"
+                    if value
+                    else "false"
+                )
+
+            raw = str(value).strip().lower()
+
+            if raw in {
+                "true", "t", "1", "yes", "y"
+            }:
+                return "true"
+
+            if raw in {
+                "false", "f", "0", "no", "n"
+            }:
+                return "false"
+
+            return raw
+
+        if field in cls.DETAIL_INTEGER_FIELDS:
+            if value is None or pd.isna(value):
+                return "<NULL>"
+
+            try:
+                return str(
+                    int(
+                        Decimal(
+                            str(value)
+                        )
+                    )
+                )
+            except (
+                InvalidOperation,
+                ValueError,
+                TypeError
+            ):
+                return str(value)
+
+        if value is None or pd.isna(value):
+            return "<NULL>"
+
+        return str(value)
+
+    @classmethod
+    def _detail_sync_signature(
+        cls,
+        record
+    ):
+        fields = (
+            "reference_date",
+            "period_type",
+            *cls.DETAIL_COLUMNS,
+        )
+
+        return tuple(
+            cls._normalize_detail_sync_value(
+                field,
+                record.get(field)
+            )
+            for field in fields
+        )
+
+    @classmethod
+    def _reconcile_detail_multiset(
+        cls,
+        current_rows,
+        generated_rows
+    ):
+        current_groups = defaultdict(list)
+        generated_groups = defaultdict(list)
+
+        for record in current_rows:
+            signature = (
+                cls._detail_sync_signature(
+                    record
+                )
+            )
+
+            row_id = record.get("id")
+
+            if row_id is None:
+                raise RuntimeError(
+                    "Detail incremental abortado: "
+                    "snapshot atual contém linha sem id."
+                )
+
+            current_groups[
+                signature
+            ].append(
+                row_id
+            )
+
+        for record in generated_rows:
+            signature = (
+                cls._detail_sync_signature(
+                    record
+                )
+            )
+
+            generated_groups[
+                signature
+            ].append(
+                record
+            )
+
+        signatures = (
+            set(current_groups)
+            | set(generated_groups)
+        )
+
+        insert_records = []
+        delete_ids = []
+        unchanged_count = 0
+
+        for signature in signatures:
+            current_ids = current_groups.get(
+                signature,
+                []
+            )
+            generated_records = (
+                generated_groups.get(
+                    signature,
+                    []
+                )
+            )
+
+            current_count = len(
+                current_ids
+            )
+            generated_count = len(
+                generated_records
+            )
+
+            unchanged_count += min(
+                current_count,
+                generated_count
+            )
+
+            if (
+                generated_count
+                > current_count
+            ):
+                insert_records.extend(
+                    generated_records[
+                        current_count:
+                        generated_count
+                    ]
+                )
+
+            elif (
+                current_count
+                > generated_count
+            ):
+                excess = (
+                    current_count
+                    - generated_count
+                )
+
+                # Para cópias funcionalmente idênticas,
+                # qualquer id excedente é equivalente.
+                delete_ids.extend(
+                    current_ids[-excess:]
+                )
+
+        return {
+            "unchanged": unchanged_count,
+            "inserts": insert_records,
+            "deletes": delete_ids,
+            "current_duplicates": (
+                len(current_rows)
+                - len(current_groups)
+            ),
+            "generated_duplicates": (
+                len(generated_rows)
+                - len(generated_groups)
+            ),
+        }
+
+    def _load_detail_snapshot(
+        self,
+        period_type
+    ):
+        columns = (
+            "id,reference_date,period_type,"
+            + ",".join(
+                self.DETAIL_COLUMNS
+            )
+            + ",updated_at"
+        )
+
+        return (
+            self.supabase
+            .select_rows_paginated(
+                "mart_profitability_detail_snapshot",
+                columns=columns,
+                filters={
+                    "period_type": period_type
+                },
+                order_by="id",
+                page_size=1000,
+            )
+        )
+
+    def _sync_detail_multiset(
+        self,
+        detail_records,
+        period_type
+    ):
+        current_rows = (
+            self._load_detail_snapshot(
+                period_type
+            )
+        )
+
+        diff = (
+            self._reconcile_detail_multiset(
+                current_rows=current_rows,
+                generated_rows=detail_records
+            )
+        )
+
+        insert_records = diff["inserts"]
+        delete_ids = diff["deletes"]
+
+        if (
+            diff["unchanged"]
+            + len(delete_ids)
+            != len(current_rows)
+        ):
+            raise RuntimeError(
+                "Detail incremental abortado: "
+                "reconciliação do snapshot atual falhou."
+            )
+
+        if (
+            diff["unchanged"]
+            + len(insert_records)
+            != len(detail_records)
+        ):
+            raise RuntimeError(
+                "Detail incremental abortado: "
+                "reconciliação do conjunto gerado falhou."
+            )
+
+        # Ordem deliberada e já homologada no H3.6:
+        # primeiro inserimos as cópias faltantes e
+        # somente depois removemos os ids excedentes.
+        # Em caso de interrupção, uma nova execução
+        # recalcula o multiset e converge novamente.
+        self.supabase.insert_batches(
+            table_name=(
+                "mart_profitability_detail_snapshot"
+            ),
+            data=insert_records,
+            batch_size=100
+        )
+
+        self.supabase.delete_ids_batches(
+            table_name=(
+                "mart_profitability_detail_snapshot"
+            ),
+            ids=delete_ids,
+            id_column="id",
+            batch_size=100
+        )
+
+        print()
+        print("=" * 60)
+        print(
+            "PROFITABILITY DETAIL - SYNC MULTISET"
+        )
+        print("=" * 60)
+        print(
+            f"Período:             {period_type}"
+        )
+        print(
+            f"Snapshot anterior:   "
+            f"{len(current_rows):,}"
+        )
+        print(
+            f"Gerado agora:        "
+            f"{len(detail_records):,}"
+        )
+        print(
+            f"Cópias iguais:       "
+            f"{diff['unchanged']:,}"
+        )
+        print(
+            f"Inserts executados:  "
+            f"{len(insert_records):,}"
+        )
+        print(
+            f"Deletes executados:  "
+            f"{len(delete_ids):,}"
+        )
+        print(
+            "Duplicatas legítimas "
+            f"(atual/gerado): "
+            f"{diff['current_duplicates']:,}/"
+            f"{diff['generated_duplicates']:,}"
+        )
+        print("=" * 60)
+
+        return len(detail_records)
+
     @staticmethod
     def _dimension_sync_key(record):
         return (
@@ -582,8 +979,8 @@ class ProfitabilityPipeline:
 
     @classmethod
     def _dimension_sync_comparable(cls, record):
-        # id / created_at / updated_at são metadados técnicos.
-        # Todos os campos de negócio continuam participando da comparação.
+        # id / created_at / updated_at sÃ£o metadados tÃ©cnicos.
+        # Todos os campos de negÃ³cio continuam participando da comparaÃ§Ã£o.
         fields = (
             "reference_date",
             "period_type",
@@ -713,7 +1110,7 @@ class ProfitabilityPipeline:
         if len(removed_ids) != len(removed_keys):
             raise RuntimeError(
                 "Dimension incremental abortado: "
-                "nem todos os removidos possuem id válido."
+                "nem todos os removidos possuem id vÃ¡lido."
             )
 
         self.supabase.upsert_batches(
@@ -739,7 +1136,7 @@ class ProfitabilityPipeline:
             "PROFITABILITY DIMENSION - SYNC DIFERENCIAL"
         )
         print("=" * 60)
-        print(f"Período:             {period_type}")
+        print(f"PerÃ­odo:             {period_type}")
         print(
             f"Snapshot anterior:   {len(current_rows):,}"
         )
@@ -790,12 +1187,9 @@ class ProfitabilityPipeline:
             [overview_record]
         )
 
-        self.supabase.replace_snapshot_batches_paginated_delete(
-            "mart_profitability_detail_snapshot",
-            filters,
-            detail_records,
-            batch_size=500,
-            delete_batch_size=250
+        self._sync_detail_multiset(
+            detail_records=detail_records,
+            period_type=period_type
         )
 
         self._sync_dimension_diff(
@@ -937,7 +1331,7 @@ class ProfitabilityPipeline:
             print(
                 "  Gerando marts de rentabilidade: "
                 f"{period_type} "
-                f"({date_from} atÃ© {date_to}) "
+                f"({date_from} atÃƒÂ© {date_to}) "
                 f"- {len(period_df)} registros"
             )
 
