@@ -541,6 +541,233 @@ class ProfitabilityPipeline:
 
         return records
 
+    @staticmethod
+    def _dimension_sync_key(record):
+        return (
+            str(record.get("reference_date") or ""),
+            str(record.get("period_type") or ""),
+            str(record.get("dimension_type") or ""),
+            str(record.get("dimension_key") or ""),
+        )
+
+    @staticmethod
+    def _normalize_dimension_sync_value(value):
+        if value is None:
+            return None
+
+        if isinstance(value, dict):
+            return {
+                str(key): ProfitabilityPipeline._normalize_dimension_sync_value(
+                    item
+                )
+                for key, item in sorted(
+                    value.items(),
+                    key=lambda pair: str(pair[0])
+                )
+            }
+
+        if isinstance(value, (list, tuple)):
+            return [
+                ProfitabilityPipeline._normalize_dimension_sync_value(item)
+                for item in value
+            ]
+
+        if isinstance(value, bool):
+            return value
+
+        if isinstance(value, (int, float)):
+            return round(float(value), 8)
+
+        return str(value)
+
+    @classmethod
+    def _dimension_sync_comparable(cls, record):
+        # id / created_at / updated_at são metadados técnicos.
+        # Todos os campos de negócio continuam participando da comparação.
+        fields = (
+            "reference_date",
+            "period_type",
+            "dimension_type",
+            "dimension_key",
+            "dimension_value",
+            "dimension_data",
+            "faturamento",
+            "custo",
+            "lucro",
+            "margem_percentual",
+            "markup_percentual",
+            "quantidade",
+            "pedidos",
+            "clientes",
+            "produtos",
+            "vendedores",
+            "ticket_medio",
+            "ticket_lucro",
+            "participacao_faturamento",
+            "participacao_lucro",
+            "data_primeira_venda",
+            "data_ultima_venda",
+            "status",
+        )
+
+        return {
+            field: cls._normalize_dimension_sync_value(
+                record.get(field)
+            )
+            for field in fields
+        }
+
+    def _sync_dimension_diff(
+        self,
+        dimension_records,
+        reference_date,
+        period_type
+    ):
+        current_rows = self.supabase.select_rows_paginated(
+            "mart_profitability_dimension_snapshot",
+            columns=(
+                "id,reference_date,period_type,dimension_type,"
+                "dimension_key,dimension_value,dimension_data,"
+                "faturamento,custo,lucro,margem_percentual,"
+                "markup_percentual,quantidade,pedidos,clientes,"
+                "produtos,vendedores,ticket_medio,ticket_lucro,"
+                "participacao_faturamento,participacao_lucro,"
+                "data_primeira_venda,data_ultima_venda,status,"
+                "created_at,updated_at"
+            ),
+            filters={
+                "period_type": period_type
+            },
+            order_by="id",
+            page_size=1000,
+        )
+
+        generated_by_key = {}
+        duplicate_generated_keys = 0
+
+        for record in dimension_records:
+            key = self._dimension_sync_key(record)
+
+            if key in generated_by_key:
+                duplicate_generated_keys += 1
+
+            generated_by_key[key] = record
+
+        current_by_key = {}
+        duplicate_current_keys = 0
+
+        for record in current_rows:
+            key = self._dimension_sync_key(record)
+
+            if key in current_by_key:
+                duplicate_current_keys += 1
+
+            current_by_key[key] = record
+
+        if (
+            duplicate_generated_keys > 0
+            or duplicate_current_keys > 0
+        ):
+            raise RuntimeError(
+                "Dimension incremental abortado: "
+                "foram encontradas chaves duplicadas."
+            )
+
+        generated_keys = set(generated_by_key)
+        current_keys = set(current_by_key)
+
+        new_keys = generated_keys - current_keys
+        removed_keys = current_keys - generated_keys
+        common_keys = generated_keys & current_keys
+
+        changed_keys = {
+            key
+            for key in common_keys
+            if self._dimension_sync_comparable(
+                generated_by_key[key]
+            )
+            != self._dimension_sync_comparable(
+                current_by_key[key]
+            )
+        }
+
+        unchanged_count = (
+            len(common_keys)
+            - len(changed_keys)
+        )
+
+        upsert_records = [
+            generated_by_key[key]
+            for key in (
+                sorted(new_keys)
+                + sorted(changed_keys)
+            )
+        ]
+
+        removed_ids = [
+            current_by_key[key]["id"]
+            for key in sorted(removed_keys)
+            if current_by_key[key].get("id") is not None
+        ]
+
+        if len(removed_ids) != len(removed_keys):
+            raise RuntimeError(
+                "Dimension incremental abortado: "
+                "nem todos os removidos possuem id válido."
+            )
+
+        self.supabase.upsert_batches(
+            table_name="mart_profitability_dimension_snapshot",
+            data=upsert_records,
+            conflict_columns=(
+                "reference_date,period_type,"
+                "dimension_type,dimension_key"
+            ),
+            batch_size=500
+        )
+
+        self.supabase.delete_ids_batches(
+            table_name="mart_profitability_dimension_snapshot",
+            ids=removed_ids,
+            id_column="id",
+            batch_size=250
+        )
+
+        print()
+        print("=" * 60)
+        print(
+            "PROFITABILITY DIMENSION - SYNC DIFERENCIAL"
+        )
+        print("=" * 60)
+        print(f"Período:             {period_type}")
+        print(
+            f"Snapshot anterior:   {len(current_rows):,}"
+        )
+        print(
+            f"Gerado agora:        {len(dimension_records):,}"
+        )
+        print(
+            f"Iguais:              {unchanged_count:,}"
+        )
+        print(
+            f"Novos:               {len(new_keys):,}"
+        )
+        print(
+            f"Alterados:           {len(changed_keys):,}"
+        )
+        print(
+            f"Removidos:           {len(removed_keys):,}"
+        )
+        print(
+            f"Upserts executados:  {len(upsert_records):,}"
+        )
+        print(
+            f"Deletes executados:  {len(removed_ids):,}"
+        )
+        print("=" * 60)
+
+        return len(dimension_records)
+
     def _save_period(
         self,
         reference_date,
@@ -571,12 +798,10 @@ class ProfitabilityPipeline:
             delete_batch_size=250
         )
 
-        self.supabase.replace_snapshot_batches_paginated_delete(
-            "mart_profitability_dimension_snapshot",
-            filters,
-            dimension_records,
-            batch_size=500,
-            delete_batch_size=250
+        self._sync_dimension_diff(
+            dimension_records=dimension_records,
+            reference_date=reference_date,
+            period_type=period_type
         )
 
         self.supabase.replace_snapshot_batches_paginated_delete(
@@ -712,7 +937,7 @@ class ProfitabilityPipeline:
             print(
                 "  Gerando marts de rentabilidade: "
                 f"{period_type} "
-                f"({date_from} até {date_to}) "
+                f"({date_from} atÃ© {date_to}) "
                 f"- {len(period_df)} registros"
             )
 
