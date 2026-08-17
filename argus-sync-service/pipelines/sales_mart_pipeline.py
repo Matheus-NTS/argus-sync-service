@@ -1,4 +1,5 @@
 from datetime import datetime
+from time import perf_counter
 import pandas as pd
 import json
 
@@ -95,52 +96,165 @@ class SalesMartPipeline:
         seller_timeline_records = 0
 
         if period_type == "historico":
+            historical_timings = {}
+
+            started_at = perf_counter()
             customer_daily_df = self._build_customer_daily(pedidos)
+            historical_timings["customer_daily_build"] = (
+                perf_counter() - started_at
+            )
+
+            started_at = perf_counter()
             customer_daily_records = self._save_customer_daily(
                 customer_daily_df,
                 reference_date=filters["reference_date"]
             )
+            historical_timings["customer_daily_save"] = (
+                perf_counter() - started_at
+            )
 
+            started_at = perf_counter()
             product_daily_df = self._build_product_daily(pedidos)
+            historical_timings["product_daily_build"] = (
+                perf_counter() - started_at
+            )
+
+            started_at = perf_counter()
             product_daily_records = self._save_product_daily(
                 product_daily_df,
                 reference_date=filters["reference_date"]
             )
+            historical_timings["product_daily_save"] = (
+                perf_counter() - started_at
+            )
 
+            started_at = perf_counter()
             category_daily_df = self._build_category_daily(pedidos)
+            historical_timings["category_daily_build"] = (
+                perf_counter() - started_at
+            )
+
+            started_at = perf_counter()
             category_daily_records = self._save_category_daily(
                 category_daily_df,
                 reference_date=filters["reference_date"]
             )
+            historical_timings["category_daily_save"] = (
+                perf_counter() - started_at
+            )
 
             seller_history = SellerHistory()
 
+            started_at = perf_counter()
             seller_daily_df = seller_history.build_daily(
                 pedidos_df=pedidos
             )
+            historical_timings["seller_daily_build"] = (
+                perf_counter() - started_at
+            )
+
+            started_at = perf_counter()
             seller_daily_records = self._save_seller_daily(
                 seller_daily_df=seller_daily_df,
                 reference_date=filters["reference_date"]
             )
+            historical_timings["seller_daily_save"] = (
+                perf_counter() - started_at
+            )
 
+            started_at = perf_counter()
             seller_monthly_df = seller_history.build_monthly(
                 pedidos_df=pedidos,
                 meta_df=meta_df,
                 reference_date=hoje.date()
             )
+            historical_timings["seller_monthly_build"] = (
+                perf_counter() - started_at
+            )
+
+            started_at = perf_counter()
             seller_monthly_records = self._save_seller_monthly(
                 seller_monthly_df=seller_monthly_df,
                 reference_date=filters["reference_date"]
             )
+            historical_timings["seller_monthly_save"] = (
+                perf_counter() - started_at
+            )
 
+            started_at = perf_counter()
             seller_timeline_df = SellerTimeline().build(
                 monthly_df=seller_monthly_df,
                 reference_date=hoje.date(),
                 include_current_month=False
             )
+            historical_timings["seller_timeline_build"] = (
+                perf_counter() - started_at
+            )
+
+            started_at = perf_counter()
             seller_timeline_records = self._save_seller_timeline(
                 seller_timeline_df=seller_timeline_df,
                 reference_date=filters["reference_date"]
+            )
+            historical_timings["seller_timeline_save"] = (
+                perf_counter() - started_at
+            )
+
+            print()
+            print("=" * 60)
+            print("SALES MART HISTORICO - BUILD X SAVE")
+            print("=" * 60)
+
+            for label, build_key, save_key in [
+                (
+                    "Customer daily",
+                    "customer_daily_build",
+                    "customer_daily_save",
+                ),
+                (
+                    "Product daily",
+                    "product_daily_build",
+                    "product_daily_save",
+                ),
+                (
+                    "Category daily",
+                    "category_daily_build",
+                    "category_daily_save",
+                ),
+                (
+                    "Seller daily",
+                    "seller_daily_build",
+                    "seller_daily_save",
+                ),
+                (
+                    "Seller monthly",
+                    "seller_monthly_build",
+                    "seller_monthly_save",
+                ),
+                (
+                    "Seller timeline",
+                    "seller_timeline_build",
+                    "seller_timeline_save",
+                ),
+            ]:
+                build_elapsed = historical_timings[build_key]
+                save_elapsed = historical_timings[save_key]
+                print(
+                    f"{label:<18} "
+                    f"build {build_elapsed:7.2f}s | "
+                    f"save {save_elapsed:7.2f}s | "
+                    f"total {build_elapsed + save_elapsed:7.2f}s"
+                )
+
+            historical_total = sum(
+                historical_timings.values()
+            )
+
+            print("-" * 60)
+            print(
+                f"Historico medido: "
+                f"{historical_total:.2f}s "
+                f"({historical_total / 60:.2f} min)"
             )
 
         product_df_total = product_df_all[product_df_all["Empresa"] == "TOTAL"].copy()
@@ -165,6 +279,188 @@ class SalesMartPipeline:
             "seller_timeline_records": seller_timeline_records
         }
 
+
+    @staticmethod
+    def _seller_daily_key(record):
+        return (
+            str(record.get("reference_date") or ""),
+            str(record.get("sale_date") or ""),
+            str(record.get("seller_key") or ""),
+            str(record.get("empresa") or "")
+        )
+
+    @staticmethod
+    def _seller_daily_comparable(record):
+        def optional_float(value, decimals):
+            if value is None:
+                return None
+            return round(float(value), decimals)
+
+        def optional_int(value):
+            if value is None:
+                return None
+            return int(value)
+
+        def optional_text(value):
+            if value is None:
+                return None
+            return str(value)
+
+        return {
+            "reference_date": str(record.get("reference_date") or ""),
+            "sale_date": str(record.get("sale_date") or ""),
+            "seller_key": str(record.get("seller_key") or ""),
+            "empresa": str(record.get("empresa") or ""),
+            "vendedor": optional_text(record.get("vendedor")),
+            "faturamento_total": optional_float(
+                record.get("faturamento_total"),
+                2
+            ),
+            "pedidos": optional_int(record.get("pedidos")),
+            "itens_vendidos": optional_int(
+                record.get("itens_vendidos")
+            ),
+            "clientes": optional_int(record.get("clientes")),
+            "mix_produtos": optional_int(
+                record.get("mix_produtos")
+            ),
+            "ticket_medio": optional_float(
+                record.get("ticket_medio"),
+                2
+            )
+        }
+
+    def _sync_seller_daily_diff(
+        self,
+        records,
+        reference_date
+    ):
+        started_at = perf_counter()
+
+        current_rows = self.supabase.select_rows_paginated(
+            "mart_commercial_seller_daily",
+            columns=(
+                "id,reference_date,sale_date,seller_key,"
+                "vendedor,empresa,faturamento_total,pedidos,"
+                "itens_vendidos,clientes,mix_produtos,ticket_medio"
+            ),
+            filters={"reference_date": reference_date},
+            order_by="id",
+            page_size=1000,
+        )
+
+        generated_by_key = {}
+        duplicate_generated_keys = 0
+
+        for record in records:
+            key = self._seller_daily_key(record)
+
+            if key in generated_by_key:
+                duplicate_generated_keys += 1
+
+            generated_by_key[key] = record
+
+        current_by_key = {}
+        duplicate_current_keys = 0
+
+        for record in current_rows:
+            key = self._seller_daily_key(record)
+
+            if key in current_by_key:
+                duplicate_current_keys += 1
+
+            current_by_key[key] = record
+
+        if duplicate_generated_keys or duplicate_current_keys:
+            raise RuntimeError(
+                "Seller Daily incremental abortado: "
+                "foram encontradas chaves duplicadas."
+            )
+
+        generated_keys = set(generated_by_key)
+        current_keys = set(current_by_key)
+
+        new_keys = generated_keys - current_keys
+        removed_keys = current_keys - generated_keys
+        common_keys = generated_keys & current_keys
+
+        changed_keys = {
+            key
+            for key in common_keys
+            if self._seller_daily_comparable(
+                generated_by_key[key]
+            )
+            != self._seller_daily_comparable(
+                current_by_key[key]
+            )
+        }
+
+        unchanged_count = len(common_keys) - len(changed_keys)
+
+        upsert_records = [
+            generated_by_key[key]
+            for key in (
+                sorted(new_keys)
+                + sorted(changed_keys)
+            )
+        ]
+
+        removed_ids = [
+            current_by_key[key]["id"]
+            for key in sorted(removed_keys)
+            if current_by_key[key].get("id") is not None
+        ]
+
+        if len(removed_ids) != len(removed_keys):
+            raise RuntimeError(
+                "Seller Daily incremental abortado: "
+                "nem todos os removidos possuem id válido."
+            )
+
+        compare_elapsed = perf_counter() - started_at
+        write_started_at = perf_counter()
+
+        self.supabase.upsert_batches(
+            table_name="mart_commercial_seller_daily",
+            data=upsert_records,
+            conflict_columns=(
+                "reference_date,sale_date,seller_key,empresa"
+            ),
+            batch_size=500,
+        )
+
+        self.supabase.delete_ids_batches(
+            table_name="mart_commercial_seller_daily",
+            ids=removed_ids,
+            id_column="id",
+            batch_size=250,
+        )
+
+        write_elapsed = perf_counter() - write_started_at
+        total_elapsed = perf_counter() - started_at
+
+        print()
+        print("=" * 60)
+        print("SELLER DAILY - SYNC DIFERENCIAL")
+        print("=" * 60)
+        print(f"Snapshot anterior:   {len(current_rows):,}")
+        print(f"Gerado agora:        {len(records):,}")
+        print(f"Iguais:              {unchanged_count:,}")
+        print(f"Novos:               {len(new_keys):,}")
+        print(f"Alterados:           {len(changed_keys):,}")
+        print(f"Removidos:           {len(removed_keys):,}")
+        print(f"Upserts executados:  {len(upsert_records):,}")
+        print(f"Deletes executados:  {len(removed_ids):,}")
+        print(f"Comparação/leitura:  {compare_elapsed:.2f}s")
+        print(f"Escrita diferencial: {write_elapsed:.2f}s")
+        print(
+            f"Tempo total sync:    "
+            f"{total_elapsed:.2f}s "
+            f"({total_elapsed / 60:.2f} min)"
+        )
+        print("=" * 60)
+
+        return len(records)
 
     def _save_seller_daily(
         self,
@@ -217,18 +513,14 @@ class SalesMartPipeline:
                 })
 
         print(
-            "  Publicando vendedores diários: "
+            "  Publicando vendedores diÃ¡rios: "
             f"{len(records):,} registros"
         )
 
-        self.supabase.replace_snapshot_batches(
-            "mart_commercial_seller_daily",
-            filters,
-            records,
-            batch_size=500
+        return self._sync_seller_daily_diff(
+            records=records,
+            reference_date=reference_date
         )
-
-        return len(records)
 
     def _save_seller_monthly(
         self,
@@ -574,14 +866,14 @@ class SalesMartPipeline:
             [
                 "Classificacao",
                 "classificacao",
-                "Classificação"
+                "ClassificaÃ§Ã£o"
             ]
         )
 
         if category_column is None:
             raise KeyError(
-                "Não foi possível gerar mart_sales_category_daily. "
-                "Nenhuma coluna de classificação foi encontrada."
+                "NÃ£o foi possÃ­vel gerar mart_sales_category_daily. "
+                "Nenhuma coluna de classificaÃ§Ã£o foi encontrada."
             )
 
         required_columns = [
@@ -603,7 +895,7 @@ class SalesMartPipeline:
 
         if missing_columns:
             raise KeyError(
-                "Não foi possível gerar mart_sales_category_daily. "
+                "NÃ£o foi possÃ­vel gerar mart_sales_category_daily. "
                 "Colunas ausentes: "
                 + ", ".join(missing_columns)
             )
@@ -748,6 +1040,141 @@ class SalesMartPipeline:
 
         return daily[columns]
 
+    @staticmethod
+    def _category_daily_key(record):
+        return (
+            str(record.get("reference_date") or ""),
+            str(record.get("sale_date") or ""),
+            str(record.get("empresa") or ""),
+            str(record.get("categoria") or "")
+        )
+
+    @staticmethod
+    def _category_daily_comparable(record):
+        def optional_float(value, decimals):
+            if value is None:
+                return None
+            return round(float(value), decimals)
+
+        def optional_int(value):
+            if value is None:
+                return None
+            return int(value)
+
+        return {
+            "reference_date": str(record.get("reference_date") or ""),
+            "sale_date": str(record.get("sale_date") or ""),
+            "empresa": str(record.get("empresa") or ""),
+            "categoria": str(record.get("categoria") or ""),
+            "faturamento_total": optional_float(record.get("faturamento_total"), 2),
+            "pedidos": optional_int(record.get("pedidos")),
+            "itens_vendidos": optional_int(record.get("itens_vendidos")),
+            "clientes": optional_int(record.get("clientes")),
+            "produtos": optional_int(record.get("produtos")),
+        }
+
+    def _sync_category_daily_diff(self, records, reference_date):
+        started_at = perf_counter()
+
+        current_rows = self.supabase.select_rows_paginated(
+            "mart_sales_category_daily",
+            columns=(
+                "id,reference_date,sale_date,empresa,categoria,"
+                "faturamento_total,pedidos,itens_vendidos,clientes,produtos"
+            ),
+            filters={"reference_date": reference_date},
+            order_by="id",
+            page_size=1000,
+        )
+
+        generated_by_key = {}
+        duplicate_generated_keys = 0
+        for record in records:
+            key = self._category_daily_key(record)
+            if key in generated_by_key:
+                duplicate_generated_keys += 1
+            generated_by_key[key] = record
+
+        current_by_key = {}
+        duplicate_current_keys = 0
+        for record in current_rows:
+            key = self._category_daily_key(record)
+            if key in current_by_key:
+                duplicate_current_keys += 1
+            current_by_key[key] = record
+
+        if duplicate_generated_keys or duplicate_current_keys:
+            raise RuntimeError(
+                "Category Daily incremental abortado: foram encontradas chaves duplicadas."
+            )
+
+        generated_keys = set(generated_by_key)
+        current_keys = set(current_by_key)
+        new_keys = generated_keys - current_keys
+        removed_keys = current_keys - generated_keys
+        common_keys = generated_keys & current_keys
+
+        changed_keys = {
+            key for key in common_keys
+            if self._category_daily_comparable(generated_by_key[key])
+            != self._category_daily_comparable(current_by_key[key])
+        }
+
+        unchanged_count = len(common_keys) - len(changed_keys)
+        upsert_records = [
+            generated_by_key[key]
+            for key in (sorted(new_keys) + sorted(changed_keys))
+        ]
+        removed_ids = [
+            current_by_key[key]["id"]
+            for key in sorted(removed_keys)
+            if current_by_key[key].get("id") is not None
+        ]
+
+        if len(removed_ids) != len(removed_keys):
+            raise RuntimeError(
+                "Category Daily incremental abortado: nem todos os removidos possuem id vÃ¡lido."
+            )
+
+        compare_elapsed = perf_counter() - started_at
+        write_started_at = perf_counter()
+
+        self.supabase.upsert_batches(
+            table_name="mart_sales_category_daily",
+            data=upsert_records,
+            conflict_columns="reference_date,sale_date,empresa,categoria",
+            batch_size=500,
+        )
+
+        self.supabase.delete_ids_batches(
+            table_name="mart_sales_category_daily",
+            ids=removed_ids,
+            id_column="id",
+            batch_size=250,
+        )
+
+        write_elapsed = perf_counter() - write_started_at
+        total_elapsed = perf_counter() - started_at
+
+        print()
+        print("=" * 60)
+        print("CATEGORY DAILY - SYNC DIFERENCIAL")
+        print("=" * 60)
+        print(f"Snapshot anterior:   {len(current_rows):,}")
+        print(f"Gerado agora:        {len(records):,}")
+        print(f"Iguais:              {unchanged_count:,}")
+        print(f"Novos:               {len(new_keys):,}")
+        print(f"Alterados:           {len(changed_keys):,}")
+        print(f"Removidos:           {len(removed_keys):,}")
+        print(f"Upserts executados:  {len(upsert_records):,}")
+        print(f"Deletes executados:  {len(removed_ids):,}")
+        print(f"ComparaÃ§Ã£o/leitura:  {compare_elapsed:.2f}s")
+        print(f"Escrita diferencial: {write_elapsed:.2f}s")
+        print(f"Tempo total sync:    {total_elapsed:.2f}s ({total_elapsed / 60:.2f} min)")
+        print("=" * 60)
+
+        return len(records)
+
     def _save_category_daily(
         self,
         category_daily_df,
@@ -792,18 +1219,14 @@ class SalesMartPipeline:
                 })
 
         print(
-            "  Publicando categorias diárias: "
+            "  Publicando categorias diÃ¡rias: "
             f"{len(records):,} registros"
         )
 
-        self.supabase.replace_snapshot_batches(
-            "mart_sales_category_daily",
-            filters,
-            records,
-            batch_size=500
+        return self._sync_category_daily_diff(
+            records=records,
+            reference_date=reference_date
         )
-
-        return len(records)
 
     @staticmethod
     def _first_existing_column(dataframe, candidates):
@@ -848,7 +1271,7 @@ class SalesMartPipeline:
             [
                 "Classificacao",
                 "classificacao",
-                "Classificação"
+                "ClassificaÃ§Ã£o"
             ]
         )
 
@@ -879,7 +1302,7 @@ class SalesMartPipeline:
 
         if missing_columns:
             raise KeyError(
-                "Não foi possível gerar mart_sales_product_daily. "
+                "NÃ£o foi possÃ­vel gerar mart_sales_product_daily. "
                 "Colunas ausentes: "
                 + ", ".join(missing_columns)
             )
@@ -1070,6 +1493,153 @@ class SalesMartPipeline:
 
         return daily[columns]
 
+    @staticmethod
+    def _product_daily_key(record):
+        return (
+            str(record.get("reference_date") or ""),
+            str(record.get("sale_date") or ""),
+            str(record.get("empresa") or ""),
+            str(record.get("prod_codigo") or "")
+        )
+
+    @staticmethod
+    def _product_daily_comparable(record):
+        def optional_float(value, decimals):
+            if value is None:
+                return None
+            return round(float(value), decimals)
+
+        def optional_int(value):
+            if value is None:
+                return None
+            return int(value)
+
+        def optional_text(value):
+            if value is None:
+                return None
+            return str(value)
+
+        return {
+            "reference_date": str(record.get("reference_date") or ""),
+            "sale_date": str(record.get("sale_date") or ""),
+            "empresa": str(record.get("empresa") or ""),
+            "prod_codigo": str(record.get("prod_codigo") or ""),
+            "produto": optional_text(record.get("produto")),
+            "classificacao": optional_text(record.get("classificacao")),
+            "unidade": optional_text(record.get("unidade")),
+            "faturamento_total": optional_float(record.get("faturamento_total"), 2),
+            "quantidade": optional_float(record.get("quantidade"), 4),
+            "pedidos": optional_int(record.get("pedidos")),
+            "clientes": optional_int(record.get("clientes")),
+        }
+
+    def _sync_product_daily_diff(self, records, reference_date):
+        started_at = perf_counter()
+
+        current_rows = self.supabase.select_rows_paginated(
+            "mart_sales_product_daily",
+            columns=(
+                "id,reference_date,sale_date,empresa,prod_codigo,"
+                "produto,classificacao,unidade,faturamento_total,"
+                "quantidade,pedidos,clientes"
+            ),
+            filters={"reference_date": reference_date},
+            order_by="id",
+            page_size=1000,
+        )
+
+        generated_by_key = {}
+        duplicate_generated_keys = 0
+        for record in records:
+            key = self._product_daily_key(record)
+            if key in generated_by_key:
+                duplicate_generated_keys += 1
+            generated_by_key[key] = record
+
+        current_by_key = {}
+        duplicate_current_keys = 0
+        for record in current_rows:
+            key = self._product_daily_key(record)
+            if key in current_by_key:
+                duplicate_current_keys += 1
+            current_by_key[key] = record
+
+        if duplicate_generated_keys or duplicate_current_keys:
+            raise RuntimeError(
+                "Product Daily incremental abortado: foram encontradas chaves duplicadas."
+            )
+
+        generated_keys = set(generated_by_key)
+        current_keys = set(current_by_key)
+
+        new_keys = generated_keys - current_keys
+        removed_keys = current_keys - generated_keys
+        common_keys = generated_keys & current_keys
+
+        changed_keys = {
+            key
+            for key in common_keys
+            if self._product_daily_comparable(generated_by_key[key])
+            != self._product_daily_comparable(current_by_key[key])
+        }
+
+        unchanged_count = len(common_keys) - len(changed_keys)
+
+        upsert_records = [
+            generated_by_key[key]
+            for key in (sorted(new_keys) + sorted(changed_keys))
+        ]
+
+        removed_ids = [
+            current_by_key[key]["id"]
+            for key in sorted(removed_keys)
+            if current_by_key[key].get("id") is not None
+        ]
+
+        if len(removed_ids) != len(removed_keys):
+            raise RuntimeError(
+                "Product Daily incremental abortado: nem todos os removidos possuem id vÃ¡lido."
+            )
+
+        compare_elapsed = perf_counter() - started_at
+        write_started_at = perf_counter()
+
+        self.supabase.upsert_batches(
+            table_name="mart_sales_product_daily",
+            data=upsert_records,
+            conflict_columns="reference_date,sale_date,empresa,prod_codigo",
+            batch_size=500,
+        )
+
+        self.supabase.delete_ids_batches(
+            table_name="mart_sales_product_daily",
+            ids=removed_ids,
+            id_column="id",
+            batch_size=250,
+        )
+
+        write_elapsed = perf_counter() - write_started_at
+        total_elapsed = perf_counter() - started_at
+
+        print()
+        print("=" * 60)
+        print("PRODUCT DAILY - SYNC DIFERENCIAL")
+        print("=" * 60)
+        print(f"Snapshot anterior:   {len(current_rows):,}")
+        print(f"Gerado agora:        {len(records):,}")
+        print(f"Iguais:              {unchanged_count:,}")
+        print(f"Novos:               {len(new_keys):,}")
+        print(f"Alterados:           {len(changed_keys):,}")
+        print(f"Removidos:           {len(removed_keys):,}")
+        print(f"Upserts executados:  {len(upsert_records):,}")
+        print(f"Deletes executados:  {len(removed_ids):,}")
+        print(f"ComparaÃ§Ã£o/leitura:  {compare_elapsed:.2f}s")
+        print(f"Escrita diferencial: {write_elapsed:.2f}s")
+        print(f"Tempo total sync:    {total_elapsed:.2f}s ({total_elapsed / 60:.2f} min)")
+        print("=" * 60)
+
+        return len(records)
+
     def _save_product_daily(
         self,
         product_daily_df,
@@ -1125,18 +1695,14 @@ class SalesMartPipeline:
                 })
 
         print(
-            "  Publicando produtos diários: "
+            "  Publicando produtos diÃ¡rios: "
             f"{len(records):,} registros"
         )
 
-        self.supabase.replace_snapshot_batches(
-            "mart_sales_product_daily",
-            filters,
-            records,
-            batch_size=500
+        return self._sync_product_daily_diff(
+            records=records,
+            reference_date=reference_date
         )
-
-        return len(records)
 
     def _build_customer_daily(self, pedidos):
 
@@ -1174,7 +1740,7 @@ class SalesMartPipeline:
 
         if missing_columns:
             raise KeyError(
-                "Não foi possível gerar mart_sales_customer_daily. "
+                "NÃ£o foi possÃ­vel gerar mart_sales_customer_daily. "
                 "Colunas ausentes: "
                 + ", ".join(missing_columns)
             )
@@ -1326,6 +1892,282 @@ class SalesMartPipeline:
 
         return daily[columns]
 
+    @staticmethod
+    def _customer_daily_key(record):
+        return (
+            str(record.get("reference_date") or ""),
+            str(record.get("sale_date") or ""),
+            str(record.get("empresa") or ""),
+            str(record.get("codigo_cliente") or "")
+        )
+
+    @staticmethod
+    def _customer_daily_comparable(record):
+        faturamento_total = record.get("faturamento_total")
+
+        if faturamento_total is not None:
+            faturamento_total = round(
+                float(faturamento_total),
+                2
+            )
+
+        def optional_int(value):
+            if value is None:
+                return None
+            return int(value)
+
+        return {
+            "reference_date": (
+                str(record.get("reference_date") or "")
+            ),
+            "sale_date": (
+                str(record.get("sale_date") or "")
+            ),
+            "empresa": (
+                str(record.get("empresa") or "")
+            ),
+            "codigo_cliente": (
+                str(record.get("codigo_cliente") or "")
+            ),
+            "cliente": (
+                None
+                if record.get("cliente") is None
+                else str(record.get("cliente"))
+            ),
+            "faturamento_total": faturamento_total,
+            "pedidos": optional_int(
+                record.get("pedidos")
+            ),
+            "itens_vendidos": optional_int(
+                record.get("itens_vendidos")
+            ),
+            "mix_produtos": optional_int(
+                record.get("mix_produtos")
+            ),
+            "ultima_compra": (
+                None
+                if record.get("ultima_compra") is None
+                else str(record.get("ultima_compra"))
+            )
+        }
+
+    def _sync_customer_daily_diff(
+        self,
+        records,
+        reference_date
+    ):
+
+        started_at = perf_counter()
+
+        current_rows = (
+            self.supabase.select_rows_paginated(
+                "mart_sales_customer_daily",
+                columns=(
+                    "id,"
+                    "reference_date,"
+                    "sale_date,"
+                    "empresa,"
+                    "codigo_cliente,"
+                    "cliente,"
+                    "faturamento_total,"
+                    "pedidos,"
+                    "itens_vendidos,"
+                    "mix_produtos,"
+                    "ultima_compra"
+                ),
+                filters={
+                    "reference_date": reference_date
+                },
+                order_by="id",
+                page_size=1000
+            )
+        )
+
+        generated_by_key = {}
+        duplicate_generated_keys = 0
+
+        for record in records:
+            key = self._customer_daily_key(
+                record
+            )
+
+            if key in generated_by_key:
+                duplicate_generated_keys += 1
+
+            generated_by_key[key] = record
+
+        current_by_key = {}
+        duplicate_current_keys = 0
+
+        for record in current_rows:
+            key = self._customer_daily_key(
+                record
+            )
+
+            if key in current_by_key:
+                duplicate_current_keys += 1
+
+            current_by_key[key] = record
+
+        if (
+            duplicate_generated_keys > 0
+            or duplicate_current_keys > 0
+        ):
+            raise RuntimeError(
+                "Customer Daily incremental abortado: "
+                "foram encontradas chaves duplicadas."
+            )
+
+        generated_keys = set(
+            generated_by_key
+        )
+        current_keys = set(
+            current_by_key
+        )
+
+        new_keys = (
+            generated_keys
+            - current_keys
+        )
+        removed_keys = (
+            current_keys
+            - generated_keys
+        )
+        common_keys = (
+            generated_keys
+            & current_keys
+        )
+
+        changed_keys = {
+            key
+            for key in common_keys
+            if (
+                self._customer_daily_comparable(
+                    generated_by_key[key]
+                )
+                !=
+                self._customer_daily_comparable(
+                    current_by_key[key]
+                )
+            )
+        }
+
+        unchanged_count = (
+            len(common_keys)
+            - len(changed_keys)
+        )
+
+        upsert_records = [
+            generated_by_key[key]
+            for key in (
+                sorted(new_keys)
+                + sorted(changed_keys)
+            )
+        ]
+
+        removed_ids = [
+            current_by_key[key]["id"]
+            for key in sorted(removed_keys)
+            if current_by_key[key].get("id") is not None
+        ]
+
+        if len(removed_ids) != len(removed_keys):
+            raise RuntimeError(
+                "Customer Daily incremental abortado: "
+                "nem todos os removidos possuem id vÃ¡lido."
+            )
+
+        compare_elapsed = (
+            perf_counter()
+            - started_at
+        )
+
+        write_started_at = perf_counter()
+
+        self.supabase.upsert_batches(
+            table_name="mart_sales_customer_daily",
+            data=upsert_records,
+            conflict_columns=(
+                "reference_date,"
+                "sale_date,"
+                "empresa,"
+                "codigo_cliente"
+            ),
+            batch_size=500
+        )
+
+        self.supabase.delete_ids_batches(
+            table_name="mart_sales_customer_daily",
+            ids=removed_ids,
+            id_column="id",
+            batch_size=250
+        )
+
+        write_elapsed = (
+            perf_counter()
+            - write_started_at
+        )
+
+        total_elapsed = (
+            perf_counter()
+            - started_at
+        )
+
+        print()
+        print("=" * 60)
+        print(
+            "CUSTOMER DAILY - SYNC DIFERENCIAL"
+        )
+        print("=" * 60)
+        print(
+            f"Snapshot anterior:   "
+            f"{len(current_rows):,}"
+        )
+        print(
+            f"Gerado agora:        "
+            f"{len(records):,}"
+        )
+        print(
+            f"Iguais:              "
+            f"{unchanged_count:,}"
+        )
+        print(
+            f"Novos:               "
+            f"{len(new_keys):,}"
+        )
+        print(
+            f"Alterados:           "
+            f"{len(changed_keys):,}"
+        )
+        print(
+            f"Removidos:           "
+            f"{len(removed_keys):,}"
+        )
+        print(
+            f"Upserts executados:  "
+            f"{len(upsert_records):,}"
+        )
+        print(
+            f"Deletes executados:  "
+            f"{len(removed_ids):,}"
+        )
+        print(
+            f"ComparaÃ§Ã£o/leitura:  "
+            f"{compare_elapsed:.2f}s"
+        )
+        print(
+            f"Escrita diferencial: "
+            f"{write_elapsed:.2f}s"
+        )
+        print(
+            f"Tempo total sync:    "
+            f"{total_elapsed:.2f}s "
+            f"({total_elapsed / 60:.2f} min)"
+        )
+        print("=" * 60)
+
+        return len(records)
+
     def _save_customer_daily(
         self,
         customer_daily_df,
@@ -1384,18 +2226,14 @@ class SalesMartPipeline:
                 })
 
         print(
-            "  Publicando clientes diários: "
+            "  Publicando clientes diÃ¡rios: "
             f"{len(records):,} registros"
         )
 
-        self.supabase.replace_snapshot_batches(
-            "mart_sales_customer_daily",
-            filters,
-            records,
-            batch_size=500
+        return self._sync_customer_daily_diff(
+            records=records,
+            reference_date=reference_date
         )
-
-        return len(records)
 
     def _normalize_categories(self, category_df):
 
@@ -1730,7 +2568,7 @@ class SalesMartPipeline:
                                 "seller_health_label"
                             )
                         )
-                        or "Crítico"
+                        or "CrÃ­tico"
                     ),
                                         "seller_insights": (
                         None

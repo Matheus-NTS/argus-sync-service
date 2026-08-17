@@ -1,3 +1,4 @@
+from time import perf_counter
 from connectors.sql_server import SQLServerConnector
 from connectors.supabase_connector import SupabaseConnector
 from connectors.google_sheets_connector import GoogleSheetsConnector
@@ -10,8 +11,26 @@ from pipelines.lost_sales_pipeline import LostSalesPipeline
 from pipelines.profitability_pipeline import ProfitabilityPipeline
 from services.pipeline_state import mark_pipeline_success
 
+def run_timed(label, callback):
+    started_at = perf_counter()
+
+    print()
+    print(f"[TIMING] Iniciando {label}...")
+
+    result = callback()
+
+    elapsed = perf_counter() - started_at
+
+    print(
+        f"[TIMING] {label} concluída em "
+        f"{elapsed:.2f}s "
+        f"({elapsed / 60:.2f} min)"
+    )
+
+    return result, elapsed
 
 def main():
+    main_started_at = perf_counter()
 
     print("=" * 60)
     print("ARGUS SYNC SERVICE")
@@ -25,7 +44,10 @@ def main():
         sql_connector,
         supabase_connector
     )
-    sales_result = sales.run()
+    sales_result, sales_elapsed = run_timed(
+        "Sales Pipeline",
+        sales.run,
+    )
 
     mark_pipeline_success(
     supabase_connector,
@@ -36,7 +58,10 @@ def main():
         sql_connector,
         supabase_connector
     )
-    customer_geo_result = customer_geo.run()
+    customer_geo_result, customer_geo_elapsed = run_timed(
+        "Customer Geo Pipeline",
+        customer_geo.run,
+    )
 
     mark_pipeline_success(
     supabase_connector,
@@ -47,7 +72,10 @@ def main():
         sql_connector,
         supabase_connector
     )
-    stock_result = stock.run()
+    stock_result, stock_elapsed = run_timed(
+        "Stock Pipeline",
+        stock.run,
+    )
 
     mark_pipeline_success(
     supabase_connector,
@@ -58,7 +86,10 @@ def main():
         sql_connector,
         supabase_connector
     )
-    profitability_result = profitability.run()
+    profitability_result, profitability_elapsed = run_timed(
+        "Profitability Pipeline",
+        profitability.run,
+    )
 
     mark_pipeline_success(
     supabase_connector,
@@ -69,7 +100,10 @@ def main():
         google_sheets_connector,
         supabase_connector
     )
-    lost_sales_result = lost_sales.run()
+    lost_sales_result, lost_sales_elapsed = run_timed(
+        "Lost Sales Pipeline",
+        lost_sales.run,
+    )
 
     mark_pipeline_success(
     supabase_connector,
@@ -82,15 +116,61 @@ def main():
         sql_connector,
         supabase_connector
     )
-    executive_result = executive.run()
+    executive_result, executive_elapsed = run_timed(
+        "Executive Pipeline",
+        executive.run,
+    )
 
     mark_pipeline_success(
     supabase_connector,
     "executive",
     )
 
+    total_elapsed = (
+        sales_elapsed
+        + customer_geo_elapsed
+        + stock_elapsed
+        + profitability_elapsed
+        + lost_sales_elapsed
+        + executive_elapsed
+    )
+
     print()
-    print("✓ Executive Pipeline finalizada")
+    print("=" * 60)
+    print("TEMPO DAS PIPELINES")
+    print("=" * 60)
+    print(
+        f"Sales:          {sales_elapsed:8.2f}s "
+        f"({sales_elapsed / 60:.2f} min)"
+    )
+    print(
+        f"Customer Geo:   {customer_geo_elapsed:8.2f}s "
+        f"({customer_geo_elapsed / 60:.2f} min)"
+    )
+    print(
+        f"Stock:          {stock_elapsed:8.2f}s "
+        f"({stock_elapsed / 60:.2f} min)"
+    )
+    print(
+        f"Profitability:  {profitability_elapsed:8.2f}s "
+        f"({profitability_elapsed / 60:.2f} min)"
+    )
+    print(
+        f"Lost Sales:     {lost_sales_elapsed:8.2f}s "
+        f"({lost_sales_elapsed / 60:.2f} min)"
+    )
+    print(
+        f"Executive:      {executive_elapsed:8.2f}s "
+        f"({executive_elapsed / 60:.2f} min)"
+    )
+    print("-" * 60)
+    print(
+        f"TOTAL:          {total_elapsed:8.2f}s "
+        f"({total_elapsed / 60:.2f} min)"
+    )
+
+    print()
+    print("Executive Pipeline finalizada")
     print(
         f"  Insights: "
         f"{executive_result['insights_count']}"
@@ -410,6 +490,25 @@ def main():
     print("ARGUS SYNC FINALIZADO")
     print("=" * 60)
 
+    main_elapsed = perf_counter() - main_started_at
+    pipeline_overhead = main_elapsed - total_elapsed
+
+    print()
+    print("=" * 60)
+    print("TEMPO TOTAL DO SYNC")
+    print("=" * 60)
+    print(
+        f"Pipelines medidas: {total_elapsed:.2f}s "
+        f"({total_elapsed / 60:.2f} min)"
+    )
+    print(
+        f"Overhead restante: {pipeline_overhead:.2f}s "
+        f"({pipeline_overhead / 60:.2f} min)"
+    )
+    print(
+        f"MAIN COMPLETO:     {main_elapsed:.2f}s "
+        f"({main_elapsed / 60:.2f} min)"
+    )
 
 if __name__ == "__main__":
     main()

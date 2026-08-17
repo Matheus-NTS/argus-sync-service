@@ -93,6 +93,72 @@ class SupabaseConnector:
 
         return response.data or []
 
+    def select_rows_paginated(
+        self,
+        table_name,
+        columns="*",
+        filters=None,
+        order_by=None,
+        descending=False,
+        page_size=1000
+    ):
+
+        if page_size <= 0:
+            raise ValueError(
+                "page_size deve ser maior que zero."
+            )
+
+        rows = []
+        start = 0
+
+        while True:
+
+            query = (
+                self.client
+                .table(table_name)
+                .select(columns)
+            )
+
+            for column, value in (
+                filters or {}
+            ).items():
+                query = query.eq(
+                    column,
+                    value
+                )
+
+            if order_by:
+                query = query.order(
+                    order_by,
+                    desc=descending
+                )
+
+            end = (
+                start
+                + page_size
+                - 1
+            )
+
+            response = (
+                query
+                .range(
+                    start,
+                    end
+                )
+                .execute()
+            )
+
+            page = response.data or []
+
+            rows.extend(page)
+
+            if len(page) < page_size:
+                break
+
+            start += page_size
+
+        return rows
+
     def insert(self, table_name, data):
 
         return (
@@ -154,6 +220,85 @@ class SupabaseConnector:
             )
             .execute()
         )
+
+    def upsert_batches(
+        self,
+        table_name,
+        data,
+        conflict_columns,
+        batch_size=500
+    ):
+
+        if not data:
+            return []
+
+        if batch_size <= 0:
+            raise ValueError(
+                "batch_size deve ser maior que zero."
+            )
+
+        responses = []
+
+        for start in range(
+            0,
+            len(data),
+            batch_size
+        ):
+            batch = data[
+                start:start + batch_size
+            ]
+
+            response = self.upsert(
+                table_name,
+                batch,
+                conflict_columns
+            )
+
+            responses.append(response)
+
+        return responses
+
+    def delete_ids_batches(
+        self,
+        table_name,
+        ids,
+        id_column="id",
+        batch_size=250
+    ):
+
+        if not ids:
+            return []
+
+        if batch_size <= 0:
+            raise ValueError(
+                "batch_size deve ser maior que zero."
+            )
+
+        responses = []
+
+        for start in range(
+            0,
+            len(ids),
+            batch_size
+        ):
+            batch = ids[
+                start:start + batch_size
+            ]
+
+            response = (
+                self.client
+                .table(table_name)
+                .delete()
+                .in_(
+                    id_column,
+                    batch
+                )
+                .execute()
+            )
+
+            responses.append(response)
+
+        return responses
 
     def delete_where(
         self,
