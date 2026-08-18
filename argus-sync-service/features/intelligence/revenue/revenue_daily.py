@@ -70,6 +70,12 @@ class RevenueDaily:
             calendar or BusinessCalendar()
         )
 
+        # H3.10: cache local dos atributos de calendário por data.
+        # Os atributos dependem apenas da data/calendário, não da empresa.
+        # Isso evita recalcular o mesmo month_summary para cada nível
+        # (consolidado + empresas) durante build_mart().
+        self._calendar_day_cache: dict[date, dict] = {}
+
     def build(self) -> RevenueDailyResult:
         revenue = self._prepare_revenue()
         meta_mensal = self._resolve_monthly_meta(
@@ -463,6 +469,13 @@ class RevenueDaily:
         self,
         current_date: date,
     ) -> dict:
+        cached = self._calendar_day_cache.get(
+            current_date
+        )
+
+        if cached is not None:
+            return cached
+
         current_summary = self.calendar.month_summary(
             current_date
         )
@@ -492,7 +505,7 @@ class RevenueDaily:
             current_summary.dias_uteis_decorridos
         )
 
-        return {
+        attributes = {
             "dia_util": (
                 current_elapsed > previous_elapsed
             ),
@@ -501,6 +514,12 @@ class RevenueDaily:
                 current_summary.dias_uteis_mes
             ),
         }
+
+        self._calendar_day_cache[
+            current_date
+        ] = attributes
+
+        return attributes
 
     def _prepare_revenue(self) -> pd.DataFrame:
         if self.revenue_df is None:
