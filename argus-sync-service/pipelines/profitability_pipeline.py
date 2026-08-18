@@ -696,22 +696,244 @@ class ProfitabilityPipeline:
         )
 
     @classmethod
+    def _normalize_detail_sync_frame(
+        cls,
+        rows
+    ):
+        fields = (
+            "reference_date",
+            "period_type",
+            *cls.DETAIL_COLUMNS,
+        )
+
+        if not rows:
+            return pd.DataFrame(
+                columns=list(fields)
+            )
+
+        df = pd.DataFrame(rows)
+
+        missing_columns = [
+            field
+            for field in fields
+            if field not in df.columns
+        ]
+
+        if missing_columns:
+            raise RuntimeError(
+                "Detail incremental abortado: "
+                "colunas ausentes na normalização: "
+                + ", ".join(missing_columns)
+            )
+
+        normalized = pd.DataFrame(
+            index=df.index
+        )
+
+        for field in fields:
+            series = df[field]
+
+            if field in {
+                "reference_date",
+                "data_venda"
+            }:
+                parsed = pd.to_datetime(
+                    series,
+                    errors="coerce"
+                )
+
+                normalized[field] = (
+                    parsed.dt.date
+                    .astype("string")
+                    .fillna("<NULL>")
+                )
+
+                continue
+
+            if field in cls.DETAIL_NUMERIC_SCALES:
+                scale = (
+                    cls.DETAIL_NUMERIC_SCALES[
+                        field
+                    ]
+                )
+
+                def normalize_numeric(value):
+                    if (
+                        value is None
+                        or pd.isna(value)
+                    ):
+                        return "<NULL>"
+
+                    try:
+                        decimal_value = Decimal(
+                            str(value)
+                        )
+                    except (
+                        InvalidOperation,
+                        ValueError,
+                        TypeError
+                    ):
+                        return str(value)
+
+                    quantum = Decimal(
+                        "1"
+                    ).scaleb(
+                        -scale
+                    )
+
+                    decimal_value = (
+                        decimal_value.quantize(
+                            quantum,
+                            rounding=ROUND_HALF_UP
+                        )
+                    )
+
+                    return format(
+                        decimal_value,
+                        f".{scale}f"
+                    )
+
+                normalized[field] = (
+                    series.map(
+                        normalize_numeric
+                    )
+                )
+
+                continue
+
+            if field in cls.DETAIL_BOOLEAN_FIELDS:
+
+                def normalize_boolean(value):
+                    if (
+                        value is None
+                        or pd.isna(value)
+                    ):
+                        return "<NULL>"
+
+                    if isinstance(
+                        value,
+                        bool
+                    ):
+                        return (
+                            "true"
+                            if value
+                            else "false"
+                        )
+
+                    raw = (
+                        str(value)
+                        .strip()
+                        .lower()
+                    )
+
+                    if raw in {
+                        "true",
+                        "t",
+                        "1",
+                        "yes",
+                        "y"
+                    }:
+                        return "true"
+
+                    if raw in {
+                        "false",
+                        "f",
+                        "0",
+                        "no",
+                        "n"
+                    }:
+                        return "false"
+
+                    return raw
+
+                normalized[field] = (
+                    series.map(
+                        normalize_boolean
+                    )
+                )
+
+                continue
+
+            if field in cls.DETAIL_INTEGER_FIELDS:
+
+                def normalize_integer(value):
+                    if (
+                        value is None
+                        or pd.isna(value)
+                    ):
+                        return "<NULL>"
+
+                    try:
+                        return str(
+                            int(
+                                Decimal(
+                                    str(value)
+                                )
+                            )
+                        )
+                    except (
+                        InvalidOperation,
+                        ValueError,
+                        TypeError
+                    ):
+                        return str(value)
+
+                normalized[field] = (
+                    series.map(
+                        normalize_integer
+                    )
+                )
+
+                continue
+
+            normalized[field] = (
+                series.astype("string")
+                .fillna("<NULL>")
+            )
+
+        return normalized
+
+    @classmethod
     def _reconcile_detail_multiset(
         cls,
         current_rows,
         generated_rows
     ):
+        current_normalized = (
+            cls._normalize_detail_sync_frame(
+                current_rows
+            )
+        )
+
+        generated_normalized = (
+            cls._normalize_detail_sync_frame(
+                generated_rows
+            )
+        )
+
         current_groups = defaultdict(list)
         generated_groups = defaultdict(list)
 
-        for record in current_rows:
-            signature = (
-                cls._detail_sync_signature(
-                    record
-                )
+        current_signatures = list(
+            current_normalized.itertuples(
+                index=False,
+                name=None
             )
+        )
 
-            row_id = record.get("id")
+        generated_signatures = list(
+            generated_normalized.itertuples(
+                index=False,
+                name=None
+            )
+        )
+
+        for index, signature in enumerate(
+            current_signatures
+        ):
+            row_id = current_rows[
+                index
+            ].get("id")
 
             if row_id is None:
                 raise RuntimeError(
@@ -725,17 +947,15 @@ class ProfitabilityPipeline:
                 row_id
             )
 
-        for record in generated_rows:
-            signature = (
-                cls._detail_sync_signature(
-                    record
-                )
-            )
-
+        for index, signature in enumerate(
+            generated_signatures
+        ):
             generated_groups[
                 signature
             ].append(
-                record
+                generated_rows[
+                    index
+                ]
             )
 
         signatures = (
@@ -752,6 +972,7 @@ class ProfitabilityPipeline:
                 signature,
                 []
             )
+
             generated_records = (
                 generated_groups.get(
                     signature,
@@ -762,6 +983,7 @@ class ProfitabilityPipeline:
             current_count = len(
                 current_ids
             )
+
             generated_count = len(
                 generated_records
             )
@@ -791,10 +1013,10 @@ class ProfitabilityPipeline:
                     - generated_count
                 )
 
-                # Para cópias funcionalmente idênticas,
-                # qualquer id excedente é equivalente.
                 delete_ids.extend(
-                    current_ids[-excess:]
+                    current_ids[
+                        -excess:
+                    ]
                 )
 
         return {
@@ -877,11 +1099,9 @@ class ProfitabilityPipeline:
                 "reconciliação do conjunto gerado falhou."
             )
 
-        # Ordem deliberada e já homologada no H3.6:
+        # Ordem deliberada e homologada no H3.6:
         # primeiro inserimos as cópias faltantes e
         # somente depois removemos os ids excedentes.
-        # Em caso de interrupção, uma nova execução
-        # recalcula o multiset e converge novamente.
         self.supabase.insert_batches(
             table_name=(
                 "mart_profitability_detail_snapshot"
@@ -979,8 +1199,8 @@ class ProfitabilityPipeline:
 
     @classmethod
     def _dimension_sync_comparable(cls, record):
-        # id / created_at / updated_at sÃ£o metadados tÃ©cnicos.
-        # Todos os campos de negÃ³cio continuam participando da comparaÃ§Ã£o.
+        # id / created_at / updated_at sÃƒÂ£o metadados tÃƒÂ©cnicos.
+        # Todos os campos de negÃƒÂ³cio continuam participando da comparaÃƒÂ§ÃƒÂ£o.
         fields = (
             "reference_date",
             "period_type",
@@ -1110,7 +1330,7 @@ class ProfitabilityPipeline:
         if len(removed_ids) != len(removed_keys):
             raise RuntimeError(
                 "Dimension incremental abortado: "
-                "nem todos os removidos possuem id vÃ¡lido."
+                "nem todos os removidos possuem id vÃƒÂ¡lido."
             )
 
         self.supabase.upsert_batches(
@@ -1136,7 +1356,7 @@ class ProfitabilityPipeline:
             "PROFITABILITY DIMENSION - SYNC DIFERENCIAL"
         )
         print("=" * 60)
-        print(f"PerÃ­odo:             {period_type}")
+        print(f"PerÃƒÂ­odo:             {period_type}")
         print(
             f"Snapshot anterior:   {len(current_rows):,}"
         )
@@ -1331,7 +1551,7 @@ class ProfitabilityPipeline:
             print(
                 "  Gerando marts de rentabilidade: "
                 f"{period_type} "
-                f"({date_from} atÃƒÂ© {date_to}) "
+                f"({date_from} até {date_to}) "
                 f"- {len(period_df)} registros"
             )
 
