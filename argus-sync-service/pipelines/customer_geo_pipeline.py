@@ -123,6 +123,78 @@ class CustomerGeoPipeline:
 
         return records
 
+    def _load_geo_cache_hashes(self) -> set:
+        records = self._fetch_all(
+            "customer_geo_cache",
+            columns="endereco_hash"
+        )
+
+        return {
+            item.get("endereco_hash")
+            for item in records
+            if item.get("endereco_hash")
+        }
+
+    def _register_new_geo_hashes(
+        self,
+        latest_addresses: pd.DataFrame
+    ) -> int:
+        existing_hashes = self._load_geo_cache_hashes()
+        pending_by_hash = {}
+
+        for _, row in latest_addresses.iterrows():
+            city = self._clean_text(
+                row.get("cidade")
+            )
+            street = self._clean_text(
+                row.get("logradouro_entrega")
+            )
+
+            if not city or not street:
+                continue
+
+            address = self._build_address(row)
+            address_hash = self._build_hash(address)
+
+            if (
+                address_hash in existing_hashes
+                or address_hash in pending_by_hash
+            ):
+                continue
+
+            pending_by_hash[address_hash] = {
+                "endereco_hash": address_hash,
+                "endereco_completo": address,
+                "tipo_logradouro": self._clean_text(
+                    row.get("tipo_logradouro")
+                ),
+                "logradouro": street,
+                "numero": self._clean_text(
+                    row.get("numero_entrega")
+                ),
+                "bairro": self._clean_text(
+                    row.get("bairro_entrega")
+                ),
+                "cidade": city,
+                "cep": self._clean_text(
+                    row.get("cep_entrega")
+                ),
+                "geo_status": "pending",
+            }
+
+        records = list(
+            pending_by_hash.values()
+        )
+
+        if records:
+            self.supabase.insert_batches(
+                "customer_geo_cache",
+                records,
+                batch_size=500
+            )
+
+        return len(records)
+
     def _load_geo_cache(self) -> dict:
         records = self._fetch_all(
             "customer_geo_cache",
@@ -289,6 +361,16 @@ class CustomerGeoPipeline:
                 right_on=["empresa", "codigo_cliente"],
                 how="left",
                 suffixes=("", "_metric")
+            )
+
+        new_geo_hashes = self._register_new_geo_hashes(
+            latest_addresses
+        )
+
+        if new_geo_hashes:
+            print(
+                f"  Novos hashes geográficos registrados: "
+                f"{new_geo_hashes}"
             )
 
         geo_cache = self._load_geo_cache()
