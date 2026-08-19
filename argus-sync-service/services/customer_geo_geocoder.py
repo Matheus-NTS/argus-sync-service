@@ -1,7 +1,7 @@
 import os
 import re
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from dotenv import load_dotenv
 from geopy.exc import (
@@ -16,6 +16,8 @@ class CustomerGeoGeocoder:
 
     DEFAULT_BATCH_SIZE = 5
     MIN_DELAY_SECONDS = 1.1
+    ERROR_RETRY_HOURS = 6
+    MAX_ATTEMPTS = 3
 
     def __init__(self, supabase_connector):
         self.supabase = supabase_connector
@@ -43,6 +45,30 @@ class CustomerGeoGeocoder:
         return datetime.now(
             timezone.utc
         ).isoformat()
+
+    @classmethod
+    def _next_retry_iso(cls):
+        return (
+            datetime.now(timezone.utc)
+            + timedelta(
+                hours=cls.ERROR_RETRY_HOURS
+            )
+        ).isoformat()
+
+    @staticmethod
+    def _parse_iso(value):
+        if not value:
+            return None
+
+        try:
+            return datetime.fromisoformat(
+                str(value).replace(
+                    "Z",
+                    "+00:00"
+                )
+            )
+        except ValueError:
+            return None
 
     @staticmethod
     def _clean(value):
@@ -176,7 +202,7 @@ class CustomerGeoGeocoder:
             dict.fromkeys(queries)
         )
 
-    def _load_pending(
+    def _load_queue(
         self,
         candidate_hashes=None,
     ):
@@ -188,27 +214,17 @@ class CustomerGeoGeocoder:
             "tipo_logradouro,logradouro,numero,"
             "bairro,cidade,cep,geo_status,"
             "attempt_count,first_checked_at,"
+            "last_checked_at,next_retry_at,"
             "created_at"
         )
 
-        if candidate_hashes is None:
-            return self.supabase.select_rows(
-                "customer_geo_cache",
-                columns=columns,
-                filters={
-                    "geo_status": "pending"
-                },
-                order_by="created_at",
-                descending=False,
-                limit=self.batch_size,
+        if candidate_hashes is not None:
+            candidate_hashes = set(
+                candidate_hashes
             )
 
-        candidate_hashes = set(
-            candidate_hashes
-        )
-
-        if not candidate_hashes:
-            return []
+            if not candidate_hashes:
+                return []
 
         pending = self.supabase.select_rows_paginated(
             "customer_geo_cache",
@@ -221,14 +237,80 @@ class CustomerGeoGeocoder:
             page_size=1000,
         )
 
-        selected = [
-            row
-            for row in pending
-            if row.get("endereco_hash")
-            in candidate_hashes
+        if candidate_hashes is not None:
+            pending = [
+                row
+                for row in pending
+                if row.get("endereco_hash")
+                in candidate_hashes
+            ]
+
+        selected = pending[
+            :self.batch_size
         ]
 
-        return selected[:self.batch_size]
+        remaining = (
+            self.batch_size
+            - len(selected)
+        )
+
+        if remaining <= 0:
+            return selected
+
+        errors = self.supabase.select_rows_paginated(
+            "customer_geo_cache",
+            columns=columns,
+            filters={
+                "geo_status": "error"
+            },
+            order_by="last_checked_at",
+            descending=False,
+            page_size=1000,
+        )
+
+        now = datetime.now(
+            timezone.utc
+        )
+
+        eligible_errors = []
+
+        for row in errors:
+            if (
+                candidate_hashes is not None
+                and row.get("endereco_hash")
+                not in candidate_hashes
+            ):
+                continue
+
+            attempts = int(
+                row.get("attempt_count") or 0
+            )
+
+            if attempts >= self.MAX_ATTEMPTS:
+                continue
+
+            next_retry_at = self._parse_iso(
+                row.get("next_retry_at")
+            )
+
+            if (
+                next_retry_at is not None
+                and next_retry_at > now
+            ):
+                continue
+
+            eligible_errors.append(row)
+
+            if (
+                len(eligible_errors)
+                >= remaining
+            ):
+                break
+
+        return (
+            selected
+            + eligible_errors
+        )
 
     def _update_hash(
         self,
@@ -265,11 +347,11 @@ class CustomerGeoGeocoder:
                 "GEOCODER_USER_AGENT não foi configurado em config/.env."
             )
 
-        pending = self._load_pending(
+        queue = self._load_queue(
             candidate_hashes=candidate_hashes,
         )
 
-        if not pending:
+        if not queue:
             return result
 
         geolocator = Nominatim(
@@ -279,10 +361,10 @@ class CustomerGeoGeocoder:
 
         print(
             f"  Geo automático: processando "
-            f"{len(pending)} hash(es) pending"
+            f"{len(queue)} hash(es) elegível(is)"
         )
 
-        for row in pending:
+        for row in queue:
             checked_at = self._now_iso()
             attempts_before = int(
                 row.get("attempt_count") or 0
@@ -387,7 +469,14 @@ class CustomerGeoGeocoder:
                             or checked_at
                         ),
                         "last_checked_at": checked_at,
-                        "next_retry_at": None,
+                        "next_retry_at": (
+                            self._next_retry_iso()
+                            if (
+                                attempts_before + 1
+                                < self.MAX_ATTEMPTS
+                            )
+                            else None
+                        ),
                         "last_error": str(exc)[:1000],
                         "updated_at": checked_at,
                     },
