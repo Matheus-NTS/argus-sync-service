@@ -7,6 +7,7 @@ import pandas as pd
 
 from extractors.pedido_extractor import PedidoExtractor
 from transformers.pedido_transformer import PedidoTransformer
+from services.customer_geo_geocoder import CustomerGeoGeocoder
 
 
 class CustomerGeoPipeline:
@@ -122,6 +123,30 @@ class CustomerGeoPipeline:
             start += page_size
 
         return records
+
+    def _build_current_geo_hashes(
+        self,
+        latest_addresses: pd.DataFrame
+    ) -> set:
+        hashes = set()
+
+        for _, row in latest_addresses.iterrows():
+            city = self._clean_text(
+                row.get("cidade")
+            )
+            street = self._clean_text(
+                row.get("logradouro_entrega")
+            )
+
+            if not city or not street:
+                continue
+
+            address = self._build_address(row)
+            hashes.add(
+                self._build_hash(address)
+            )
+
+        return hashes
 
     def _load_geo_cache_hashes(self) -> set:
         records = self._fetch_all(
@@ -373,6 +398,18 @@ class CustomerGeoPipeline:
                 f"{new_geo_hashes}"
             )
 
+        current_geo_hashes = (
+            self._build_current_geo_hashes(
+                latest_addresses
+            )
+        )
+
+        geo_sync = CustomerGeoGeocoder(
+            self.supabase
+        ).run(
+            candidate_hashes=current_geo_hashes
+        )
+
         geo_cache = self._load_geo_cache()
 
         records = []
@@ -532,5 +569,9 @@ class CustomerGeoPipeline:
             "geo_records": len(records),
             "geo_pending": pending_count,
             "geo_cached": cached_count,
-            "geo_invalid": invalid_count
+            "geo_invalid": invalid_count,
+            "geo_sync_processed": geo_sync["processed"],
+            "geo_sync_success": geo_sync["success"],
+            "geo_sync_not_found": geo_sync["not_found"],
+            "geo_sync_errors": geo_sync["errors"]
         }
