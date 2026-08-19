@@ -28,6 +28,16 @@ class CustomerGeoGeocoder:
             "GEOCODER_USER_AGENT"
         )
 
+        self.nominatim_domain = os.getenv(
+            "GEOCODER_NOMINATIM_DOMAIN",
+            "nominatim.openstreetmap.org",
+        ).strip()
+
+        self.nominatim_scheme = os.getenv(
+            "GEOCODER_NOMINATIM_SCHEME",
+            "https",
+        ).strip()
+
         self.batch_size = int(
             os.getenv(
                 "GEOCODER_SYNC_BATCH_SIZE",
@@ -357,6 +367,8 @@ class CustomerGeoGeocoder:
         geolocator = Nominatim(
             user_agent=self.user_agent,
             timeout=15,
+            domain=self.nominatim_domain,
+            scheme=self.nominatim_scheme,
         )
 
         print(
