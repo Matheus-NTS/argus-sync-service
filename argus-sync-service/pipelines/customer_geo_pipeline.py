@@ -251,6 +251,33 @@ class CustomerGeoPipeline:
 
         return cache
 
+    def _load_geo_state_cache(self) -> dict:
+        records = self._fetch_all(
+            "customer_geo_cache",
+            columns=(
+                "endereco_hash,latitude,longitude,geo_status,"
+                "geo_provider,geo_display_name,estado,"
+                "last_checked_at"
+            )
+        )
+
+        cache = {}
+
+        for item in records:
+            address_hash = item.get("endereco_hash")
+
+            if not address_hash:
+                continue
+
+            cache[address_hash] = {
+                **item,
+                "geo_last_checked_at": item.get(
+                    "last_checked_at"
+                ),
+            }
+
+        return cache
+
     def _load_customer_metrics(self, reference_date: str) -> pd.DataFrame:
         records = self._fetch_all(
             "mart_sales_customer_snapshot",
@@ -410,7 +437,9 @@ class CustomerGeoPipeline:
             candidate_hashes=current_geo_hashes
         )
 
-        geo_cache = self._load_geo_cache()
+        geo_state_cache = (
+            self._load_geo_state_cache()
+        )
 
         records = []
         pending_count = 0
@@ -433,25 +462,70 @@ class CustomerGeoPipeline:
                 else None
             )
 
-            cached = (
-                geo_cache.get(address_hash)
+            cached_state = (
+                geo_state_cache.get(address_hash)
                 if address_hash
                 else None
             )
 
-            if cached:
+            cached_status = (
+                cached_state.get("geo_status")
+                if cached_state
+                else None
+            )
+
+            if (
+                cached_state
+                and cached_status == "success"
+                and cached_state.get("latitude")
+                is not None
+                and cached_state.get("longitude")
+                is not None
+            ):
                 geo_status = "success"
-                latitude = cached.get("latitude")
-                longitude = cached.get("longitude")
-                geo_provider = cached.get("geo_provider")
-                geo_display_name = cached.get(
+                latitude = cached_state.get(
+                    "latitude"
+                )
+                longitude = cached_state.get(
+                    "longitude"
+                )
+                geo_provider = cached_state.get(
+                    "geo_provider"
+                )
+                geo_display_name = cached_state.get(
                     "geo_display_name"
                 )
-                estado = cached.get("estado")
-                geo_last_checked_at = cached.get(
-                    "geo_last_checked_at"
+                estado = cached_state.get("estado")
+                geo_last_checked_at = (
+                    cached_state.get(
+                        "geo_last_checked_at"
+                    )
                 )
                 cached_count += 1
+
+            elif (
+                cached_state
+                and cached_status
+                in {"pending", "not_found", "error"}
+            ):
+                geo_status = cached_status
+                latitude = None
+                longitude = None
+                geo_provider = cached_state.get(
+                    "geo_provider"
+                )
+                geo_display_name = cached_state.get(
+                    "geo_display_name"
+                )
+                estado = cached_state.get("estado")
+                geo_last_checked_at = (
+                    cached_state.get(
+                        "geo_last_checked_at"
+                    )
+                )
+
+                if cached_status == "pending":
+                    pending_count += 1
 
             elif is_valid:
                 geo_status = "pending"
