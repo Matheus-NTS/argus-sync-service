@@ -125,11 +125,11 @@ class CustomerGeoPipeline:
 
     def _load_geo_cache(self) -> dict:
         records = self._fetch_all(
-            "mart_customer_geo_snapshot",
+            "customer_geo_cache",
             columns=(
                 "endereco_hash,latitude,longitude,geo_status,"
                 "geo_provider,geo_display_name,estado,"
-                "geo_last_checked_at"
+                "last_checked_at"
             ),
             filters={"geo_status": "success"}
         )
@@ -145,7 +145,12 @@ class CustomerGeoPipeline:
             if item.get("latitude") is None or item.get("longitude") is None:
                 continue
 
-            cache[address_hash] = item
+            cache[address_hash] = {
+                **item,
+                "geo_last_checked_at": item.get(
+                    "last_checked_at"
+                ),
+            }
 
         return cache
 
