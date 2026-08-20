@@ -14,6 +14,7 @@ from services.sync_run_lock import (
     SyncAlreadyRunningError,
     SyncRunLock,
 )
+from services.sync_run_logger import SyncRunLogger
 
 def run_timed(label, callback):
     started_at = perf_counter()
@@ -515,17 +516,18 @@ def main():
     )
 
 if __name__ == "__main__":
-    try:
-        with SyncRunLock():
-            main()
-    except SyncAlreadyRunningError as exc:
-        print()
-        print("=" * 60)
-        print("ARGUS SYNC NAO INICIADO")
-        print("=" * 60)
-        print(str(exc))
-        print(
-            "A execucao atual permanece protegida; "
-            "nenhuma pipeline foi iniciada."
-        )
-        raise SystemExit(75)
+    with SyncRunLogger():
+        try:
+            with SyncRunLock():
+                main()
+        except SyncAlreadyRunningError as exc:
+            print()
+            print("=" * 60)
+            print("ARGUS SYNC NAO INICIADO")
+            print("=" * 60)
+            print(str(exc))
+            print(
+                "A execucao atual permanece protegida; "
+                "nenhuma pipeline foi iniciada."
+            )
+            raise SystemExit(75)
