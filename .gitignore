@@ -26,3 +26,5 @@ Thumbs.db
 # Arquivos temporários
 *.tmp
 *.bak
+# Runtime do ARGUS Sync
+argus-sync-service/.runtime/

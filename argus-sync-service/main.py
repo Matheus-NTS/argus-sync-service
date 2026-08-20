@@ -10,6 +10,10 @@ from pipelines.customer_geo_pipeline import CustomerGeoPipeline
 from pipelines.lost_sales_pipeline import LostSalesPipeline
 from pipelines.profitability_pipeline import ProfitabilityPipeline
 from services.pipeline_state import mark_pipeline_success
+from services.sync_run_lock import (
+    SyncAlreadyRunningError,
+    SyncRunLock,
+)
 
 def run_timed(label, callback):
     started_at = perf_counter()
@@ -511,4 +515,17 @@ def main():
     )
 
 if __name__ == "__main__":
-    main()
+    try:
+        with SyncRunLock():
+            main()
+    except SyncAlreadyRunningError as exc:
+        print()
+        print("=" * 60)
+        print("ARGUS SYNC NAO INICIADO")
+        print("=" * 60)
+        print(str(exc))
+        print(
+            "A execucao atual permanece protegida; "
+            "nenhuma pipeline foi iniciada."
+        )
+        raise SystemExit(75)
