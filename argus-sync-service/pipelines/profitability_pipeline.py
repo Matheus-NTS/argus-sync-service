@@ -1058,14 +1058,105 @@ class ProfitabilityPipeline:
             )
         )
 
+    def _rollover_snapshot_reference_date(
+        self,
+        table_name,
+        current_rows,
+        reference_date,
+        period_type,
+    ):
+        """
+        Atualiza somente o metadado reference_date do snapshot
+        quando houve virada de dia.
+
+        Estados ambiguos ou parciais abortam explicitamente.
+        """
+        if not current_rows:
+            return current_rows
+
+        raw_dates = [
+            row.get("reference_date")
+            for row in current_rows
+        ]
+
+        if any(
+            value is None
+            or not str(value).strip()
+            for value in raw_dates
+        ):
+            raise RuntimeError(
+                "Profitability rollover abortado: "
+                f"{table_name} / {period_type} possui "
+                "reference_date ausente."
+            )
+
+        existing_dates = sorted({
+            str(value)
+            for value in raw_dates
+        })
+
+        if len(existing_dates) != 1:
+            raise RuntimeError(
+                "Profitability rollover abortado: "
+                f"{table_name} / {period_type} possui "
+                "reference_dates misturadas: "
+                + ", ".join(existing_dates)
+            )
+
+        previous_reference_date = (
+            existing_dates[0]
+        )
+
+        if previous_reference_date == reference_date:
+            return current_rows
+
+        self.supabase.update_rows(
+            table_name=table_name,
+            values={
+                "reference_date": reference_date
+            },
+            filters={
+                "period_type": period_type,
+                "reference_date": (
+                    previous_reference_date
+                ),
+            },
+        )
+
+        for row in current_rows:
+            row["reference_date"] = reference_date
+
+        print(
+            "  Profitability rollover: "
+            f"{table_name} | "
+            f"{period_type} | "
+            f"{previous_reference_date} -> "
+            f"{reference_date} | "
+            f"{len(current_rows):,} registro(s)"
+        )
+
+        return current_rows
+
     def _sync_detail_multiset(
         self,
         detail_records,
+        reference_date,
         period_type
     ):
         current_rows = (
             self._load_detail_snapshot(
                 period_type
+            )
+        )
+
+        current_rows = (
+            self._rollover_snapshot_reference_date(
+                table_name=(
+                    "mart_profitability_detail_snapshot"
+                ),
+                current_rows=current_rows,
+                reference_date=reference_date,
+                period_type=period_type,
             )
         )
 
@@ -1259,6 +1350,17 @@ class ProfitabilityPipeline:
             page_size=1000,
         )
 
+        current_rows = (
+            self._rollover_snapshot_reference_date(
+                table_name=(
+                    "mart_profitability_dimension_snapshot"
+                ),
+                current_rows=current_rows,
+                reference_date=reference_date,
+                period_type=period_type,
+            )
+        )
+
         generated_by_key = {}
         duplicate_generated_keys = 0
 
@@ -1409,6 +1511,7 @@ class ProfitabilityPipeline:
 
         self._sync_detail_multiset(
             detail_records=detail_records,
+            reference_date=reference_date,
             period_type=period_type
         )
 

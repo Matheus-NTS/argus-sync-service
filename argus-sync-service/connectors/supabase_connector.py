@@ -258,6 +258,46 @@ class SupabaseConnector:
 
         return responses
 
+    def update_rows(
+        self,
+        table_name,
+        values,
+        filters,
+    ):
+        """
+        Atualiza linhas usando filtros de igualdade.
+
+        Nenhum update sem filtro e permitido.
+        """
+        if not values:
+            raise ValueError(
+                "update_rows exige values."
+            )
+
+        if not filters:
+            raise ValueError(
+                "update_rows exige ao menos um filtro."
+            )
+
+        from postgrest.types import ReturnMethod
+
+        query = (
+            self.client
+            .table(table_name)
+            .update(
+                values,
+                returning=ReturnMethod.minimal,
+            )
+        )
+
+        for column, value in filters.items():
+            query = query.eq(
+                column,
+                value,
+            )
+
+        return query.execute()
+
     def delete_ids_batches(
         self,
         table_name,
