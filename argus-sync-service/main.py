@@ -15,6 +15,7 @@ from services.sync_run_lock import (
     SyncRunLock,
 )
 from services.sync_run_logger import SyncRunLogger
+from services.sync_run_state import SyncRunState
 
 def run_timed(label, callback):
     started_at = perf_counter()
@@ -516,10 +517,13 @@ def main():
     )
 
 if __name__ == "__main__":
-    with SyncRunLogger():
+    with SyncRunLogger() as run_logger:
         try:
             with SyncRunLock():
-                main()
+                with SyncRunState(
+                    log_file=run_logger.log_path
+                ):
+                    main()
         except SyncAlreadyRunningError as exc:
             print()
             print("=" * 60)
