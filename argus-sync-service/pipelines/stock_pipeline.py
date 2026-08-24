@@ -5,6 +5,7 @@ import pandas as pd
 from extractors.produto_extractor import ProdutoExtractor
 from extractors.pedido_extractor import PedidoExtractor
 from transformers.pedido_transformer import PedidoTransformer
+from services.product_metadata_cache import ProductMetadataCache
 
 from features.intelligence.stock.stock_snapshot import StockSnapshot
 from features.intelligence.stock.stock_overview import StockOverview
@@ -32,6 +33,15 @@ class StockPipeline:
         pedido_extractor = PedidoExtractor(self.sql_connector)
 
         estoque = produto_extractor.extract()
+
+        metadata_cache = ProductMetadataCache(
+            self.sql_connector
+        )
+
+        estoque = metadata_cache.enrich(
+            estoque
+        )
+
         vendas = pedido_extractor.extract()
 
         pedido_transformer = PedidoTransformer()
@@ -106,10 +116,31 @@ class StockPipeline:
             if pd.isna(dias_para_esgotar):
                 dias_para_esgotar = None
 
+            codigo_fabricante = row.get(
+                "Codigo_Fabricante"
+            )
+            if pd.isna(codigo_fabricante):
+                codigo_fabricante = None
+
+            fabricante = row.get(
+                "Fabricante"
+            )
+            if pd.isna(fabricante):
+                fabricante = None
+
+            classificacao_produto = row.get(
+                "Classificacao_Produto"
+            )
+            if pd.isna(classificacao_produto):
+                classificacao_produto = None
+
             stock_records.append({
                 "reference_date": filters["reference_date"],
                 "period_type": filters["period_type"],
                 "codigo_produto": str(row["codigo_produto"]),
+                "codigo_fabricante": codigo_fabricante,
+                "fabricante": fabricante,
+                "classificacao_produto": classificacao_produto,
                 "produto": produto,
                 "empresa": empresa,
                 "curva_abcde": curva,
