@@ -12,6 +12,17 @@ from features.intelligence.stock.stock_overview import StockOverview
 from features.intelligence.stock.stock_scorecards import StockScorecards
 from features.intelligence.stock.stock_risk import StockRisk
 from features.intelligence.stock.stock_company import StockCompany
+from features.intelligence.stock.stock_consolidated import StockConsolidated
+from features.intelligence.stock.stock_policy import (
+    CURVE_COVERAGE_MONTHS,
+    DEFAULT_SCENARIO_MONTHS,
+    DEMAND_WINDOW_DAYS,
+    DEMAND_WINDOW_MONTHS,
+    EXCESS_COVERAGE_MONTHS,
+    LEAD_TIME_MAX_DAYS,
+    LEAD_TIME_MIN_DAYS,
+    OFFICIAL_TARGET_MONTHS,
+)
 
 
 class StockPipeline:
@@ -293,6 +304,347 @@ class StockPipeline:
             "mart_stock_company_snapshot",
             filters,
             company_records
+        )
+
+        # =========================================================
+        # STOCK V2 — CONSOLIDADO NTS
+        # =========================================================
+        # A V2 é construída e publicada somente depois de todas
+        # as marts legadas de estoque terem sido concluídas.
+        #
+        # Não altera nem substitui nenhum contrato V1.
+
+        stock_consolidated = StockConsolidated()
+
+        stock_consolidated_df = (
+            stock_consolidated.build(
+                stock_df
+            )
+        )
+
+        consolidated_records = []
+
+        for _, row in stock_consolidated_df.iterrows():
+
+            ultima_venda = None
+            if pd.notnull(
+                row.get("ultima_venda")
+            ):
+                try:
+                    ultima_venda = (
+                        pd.to_datetime(
+                            row["ultima_venda"]
+                        )
+                        .date()
+                        .isoformat()
+                    )
+                except Exception:
+                    ultima_venda = None
+
+            cobertura = row.get(
+                "cobertura_estoque"
+            )
+            if pd.isna(cobertura):
+                cobertura = None
+
+            dias_sem_venda = row.get(
+                "dias_sem_venda"
+            )
+            if pd.isna(dias_sem_venda):
+                dias_sem_venda = None
+
+            dias_para_esgotar = row.get(
+                "dias_para_esgotar"
+            )
+            if pd.isna(dias_para_esgotar):
+                dias_para_esgotar = None
+
+            codigo_fabricante = row.get(
+                "codigo_fabricante"
+            )
+            if pd.isna(codigo_fabricante):
+                codigo_fabricante = None
+
+            fabricante = row.get(
+                "fabricante"
+            )
+            if pd.isna(fabricante):
+                fabricante = None
+
+            classificacao_produto = row.get(
+                "classificacao_produto"
+            )
+            if pd.isna(classificacao_produto):
+                classificacao_produto = None
+
+            produto = row.get(
+                "produto"
+            )
+            if pd.isna(produto):
+                produto = None
+
+            curvas_origem = row.get(
+                "curvas_origem"
+            )
+            if pd.isna(curvas_origem):
+                curvas_origem = None
+
+            consolidated_records.append({
+                "reference_date":
+                    filters["reference_date"],
+
+                "period_type":
+                    filters["period_type"],
+
+                "codigo_produto":
+                    str(row["codigo_produto"]),
+
+                "codigo_fabricante":
+                    codigo_fabricante,
+
+                "fabricante":
+                    fabricante,
+
+                "classificacao_produto":
+                    classificacao_produto,
+
+                "produto":
+                    produto,
+
+                "curvas_origem":
+                    curvas_origem,
+
+                "empresas_com_produto":
+                    int(row["empresas_com_produto"]),
+
+                "posicoes_estoque":
+                    int(row["posicoes_estoque"]),
+
+                "estoque_atual":
+                    round(
+                        float(row["estoque_atual"]),
+                        2,
+                    ),
+
+                "valor_estoque":
+                    round(
+                        float(row["valor_estoque"]),
+                        2,
+                    ),
+
+                "qtd_vendida_30d":
+                    round(
+                        float(row["qtd_vendida_30d"]),
+                        2,
+                    ),
+
+                "faturamento_30d":
+                    round(
+                        float(row["faturamento_30d"]),
+                        2,
+                    ),
+
+                "qtd_vendida_90d":
+                    round(
+                        float(row["qtd_vendida_90d"]),
+                        2,
+                    ),
+
+                "faturamento_90d":
+                    round(
+                        float(row["faturamento_90d"]),
+                        2,
+                    ),
+
+                "qtd_vendida_180d":
+                    round(
+                        float(row["qtd_vendida_180d"]),
+                        2,
+                    ),
+
+                "faturamento_180d":
+                    round(
+                        float(row["faturamento_180d"]),
+                        2,
+                    ),
+
+                "ultima_venda":
+                    ultima_venda,
+
+                "dias_sem_venda":
+                    (
+                        None
+                        if dias_sem_venda is None
+                        else int(dias_sem_venda)
+                    ),
+
+                "demanda_mensal_6m":
+                    round(
+                        float(row["demanda_mensal_6m"]),
+                        4,
+                    ),
+
+                "cobertura_estoque":
+                    (
+                        None
+                        if cobertura is None
+                        else round(
+                            float(cobertura),
+                            4,
+                        )
+                    ),
+
+                "dias_para_esgotar":
+                    (
+                        None
+                        if dias_para_esgotar is None
+                        else int(dias_para_esgotar)
+                    ),
+
+                "estoque_politica_curvas":
+                    round(
+                        float(
+                            row[
+                                "estoque_politica_curvas"
+                            ]
+                        ),
+                        4,
+                    ),
+
+                "sugestao_politica_curvas":
+                    int(
+                        row[
+                            "sugestao_politica_curvas"
+                        ]
+                    ),
+
+                "ponto_pedido_lead_time":
+                    round(
+                        float(
+                            row[
+                                "ponto_pedido_lead_time"
+                            ]
+                        ),
+                        4,
+                    ),
+
+                "estoque_cenario_1m":
+                    round(
+                        float(row["estoque_cenario_1m"]),
+                        4,
+                    ),
+
+                "estoque_cenario_2m":
+                    round(
+                        float(row["estoque_cenario_2m"]),
+                        4,
+                    ),
+
+                "estoque_cenario_3m":
+                    round(
+                        float(row["estoque_cenario_3m"]),
+                        4,
+                    ),
+
+                "estoque_cenario_6m":
+                    round(
+                        float(row["estoque_cenario_6m"]),
+                        4,
+                    ),
+
+                "estoque_cenario_12m":
+                    round(
+                        float(row["estoque_cenario_12m"]),
+                        4,
+                    ),
+
+                "sugestao_cenario_1m":
+                    int(row["sugestao_cenario_1m"]),
+
+                "sugestao_cenario_2m":
+                    int(row["sugestao_cenario_2m"]),
+
+                "sugestao_cenario_3m":
+                    int(row["sugestao_cenario_3m"]),
+
+                "sugestao_cenario_6m":
+                    int(row["sugestao_cenario_6m"]),
+
+                "sugestao_cenario_12m":
+                    int(row["sugestao_cenario_12m"]),
+
+                "replenishment_status":
+                    row["replenishment_status"],
+
+                "replenishment_action":
+                    row["replenishment_action"],
+
+                "risk_type":
+                    row["risk_type"],
+
+                "status":
+                    row["status"],
+            })
+
+        self.supabase.replace_snapshot_batches(
+            "mart_stock_product_consolidated_snapshot",
+            filters,
+            consolidated_records,
+            batch_size=500
+        )
+
+        # ---------------------------------------------------------
+        # STOCK V2 — POLÍTICA OFICIAL
+        # ---------------------------------------------------------
+
+        policy_records = [{
+            "reference_date":
+                filters["reference_date"],
+
+            "period_type":
+                filters["period_type"],
+
+            "demand_window_days":
+                int(DEMAND_WINDOW_DAYS),
+
+            "demand_window_months":
+                int(DEMAND_WINDOW_MONTHS),
+
+            "default_scenario_months":
+                int(DEFAULT_SCENARIO_MONTHS),
+
+            "lead_time_min_days":
+                int(LEAD_TIME_MIN_DAYS),
+
+            "lead_time_max_days":
+                int(LEAD_TIME_MAX_DAYS),
+
+            "official_target_months":
+                int(OFFICIAL_TARGET_MONTHS),
+
+            "excess_coverage_months":
+                float(EXCESS_COVERAGE_MONTHS),
+
+            "curve_a_months":
+                float(CURVE_COVERAGE_MONTHS["A"]),
+
+            "curve_b_months":
+                float(CURVE_COVERAGE_MONTHS["B"]),
+
+            "curve_c_months":
+                float(CURVE_COVERAGE_MONTHS["C"]),
+
+            "curve_d_months":
+                float(CURVE_COVERAGE_MONTHS["D"]),
+
+            "curve_e_months":
+                float(CURVE_COVERAGE_MONTHS["E"]),
+        }]
+
+        self.supabase.replace_snapshot(
+            "mart_stock_policy_snapshot",
+            filters,
+            policy_records
         )
 
         status_counts = stock_df["status"].value_counts().to_dict()

@@ -2,6 +2,13 @@ from datetime import datetime
 
 import math
 import pandas as pd
+from features.intelligence.stock.stock_policy import (
+    CURVE_COVERAGE_MONTHS,
+    DEFAULT_CURVE_COVERAGE_MONTHS,
+    DEMAND_WINDOW_MONTHS,
+    LEAD_TIME_MAX_MONTHS,
+    SCENARIO_MONTHS,
+)
 
 
 class StockSnapshot:
@@ -52,15 +59,10 @@ class StockSnapshot:
 
         curva = str(curva or "").strip().upper()
 
-        mapping = {
-            "A": 2.5,
-            "B": 2.0,
-            "C": 1.5,
-            "D": 1.0,
-            "E": 0.5
-        }
-
-        return mapping.get(curva, 1.0)
+        return CURVE_COVERAGE_MONTHS.get(
+            curva,
+            DEFAULT_CURVE_COVERAGE_MONTHS
+        )
 
     def _classify_replenishment(self, estoque_atual, media_6m, estoque_ideal, ponto_pedido):
 
@@ -201,6 +203,50 @@ class StockSnapshot:
 
         base["media_venda_mensal"] = base["qtd_vendida_90d"] / 3
         base["media_venda_6m"] = base["qtd_vendida_180d"] / 6
+
+        # ---------------------------------------------------------
+        # STOCK V2 — demanda-base e cenários de planejamento
+        # ---------------------------------------------------------
+        # A nova inteligência usa uma única demanda mensal de referência,
+        # calculada sobre os últimos 6 meses.
+        #
+        # Os campos legados permanecem intactos para zero regressão.
+
+        base["demanda_mensal_6m"] = (
+            base["qtd_vendida_180d"] /
+            DEMAND_WINDOW_MONTHS
+        )
+
+        # Gatilho operacional baseado no limite superior do lead time
+        # de importação atualmente praticado pela NTS: 90 dias ≈ 3 meses.
+        base["ponto_pedido_lead_time"] = (
+            base["demanda_mensal_6m"] *
+            LEAD_TIME_MAX_MONTHS
+        )
+
+        # Cenários executivos de cobertura.
+        # Não substituem a política ABCDE; representam uma segunda lente
+        # de planejamento selecionável no ARGUS.
+        for meses in SCENARIO_MONTHS:
+            estoque_col = (
+                f"estoque_cenario_{meses}m"
+            )
+
+            sugestao_col = (
+                f"sugestao_cenario_{meses}m"
+            )
+
+            base[estoque_col] = (
+                base["demanda_mensal_6m"] *
+                meses
+            )
+
+            base[sugestao_col] = (
+                base[estoque_col] -
+                base["Quantidade_Estoque"]
+            ).clip(lower=0).apply(
+                math.ceil
+            )
 
         base["cobertura_estoque"] = base.apply(
             lambda row: (
