@@ -9,6 +9,9 @@ from features.intelligence.revenue.meta_dataset import (
 from features.intelligence.revenue.revenue_dataset import (
     RevenueDataset,
 )
+from features.intelligence.revenue.revenue_daily import (
+    RevenueDaily,
+)
 from features.intelligence.revenue.revenue_history import (
     RevenueHistory,
 )
@@ -49,11 +52,27 @@ def main():
         metas_raw
     )
 
+    reference_date = date.today()
+
+    daily_service = RevenueDaily(
+        revenue_df=revenue,
+        meta_df=metas.general_monthly,
+        company_meta_df=getattr(
+            metas,
+            "company_monthly",
+            None,
+        ),
+        reference_date=reference_date,
+    )
+
+    daily = daily_service.build()
+
     overview = RevenueOverview(
-        reference_date=date.today(),
+        reference_date=reference_date,
     ).build(
         history=history,
         metas=metas,
+        daily=daily,
     )
 
     print_section("OVERVIEW MENSAL")

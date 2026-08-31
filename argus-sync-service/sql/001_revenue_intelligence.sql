@@ -31,6 +31,12 @@ create table if not exists public.mart_revenue_monthly (
     crescimento_mom numeric(18, 6),
     faturamento_ano_anterior numeric(18, 2),
     crescimento_yoy numeric(18, 6),
+
+    ticket_medio_mes_anterior numeric(18, 2),
+    crescimento_ticket_mom numeric(18, 6),
+    ticket_medio_ano_anterior numeric(18, 2),
+    crescimento_ticket_yoy numeric(18, 6),
+
     acumulado_ytd numeric(18, 2),
 
     meta numeric(18, 2),

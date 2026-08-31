@@ -71,8 +71,12 @@ class RevenueIntelligencePipeline:
             "mes_em_aberto",
             "faturamento_mes_anterior",
             "crescimento_mom",
+            "ticket_medio_mes_anterior",
+            "crescimento_ticket_mom",
             "faturamento_ano_anterior",
             "crescimento_yoy",
+            "ticket_medio_ano_anterior",
+            "crescimento_ticket_yoy",
             "acumulado_ytd",
             "meta",
             "supermeta",
@@ -689,7 +693,14 @@ class RevenueIntelligencePipeline:
             return pd.DataFrame()
 
         df = company_monthly.copy()
-        required = {"empresa", "ano", "mes", "faturamento", "pedidos"}
+        required = {
+            "empresa",
+            "ano",
+            "mes",
+            "faturamento",
+            "pedidos",
+            "ticket_medio",
+        }
         missing = required.difference(df.columns)
         if missing:
             raise KeyError(
@@ -705,6 +716,9 @@ class RevenueIntelligencePipeline:
         df["pedidos"] = pd.to_numeric(
             df["pedidos"], errors="coerce"
         ).fillna(0)
+        df["ticket_medio"] = pd.to_numeric(
+            df["ticket_medio"], errors="coerce"
+        ).fillna(0.0)
 
         df = df[df["ano"].notna() & df["mes"].notna()].copy()
         df["ano"] = df["ano"].astype(int)
@@ -753,12 +767,33 @@ class RevenueIntelligencePipeline:
             np.nan,
         )
 
+        df["ticket_medio_mes_anterior"] = (
+            df.groupby("empresa")["ticket_medio"]
+            .shift(1)
+            .fillna(0.0)
+        )
+        previous_ticket = df["ticket_medio_mes_anterior"]
+        df["crescimento_ticket_mom"] = np.where(
+            previous_ticket != 0,
+            (df["ticket_medio"] / previous_ticket) - 1,
+            np.nan,
+        )
+
         previous_year = df[
-            ["empresa", "ano", "mes", "faturamento"]
+            [
+                "empresa",
+                "ano",
+                "mes",
+                "faturamento",
+                "ticket_medio",
+            ]
         ].copy()
         previous_year["ano"] = previous_year["ano"] + 1
         previous_year = previous_year.rename(
-            columns={"faturamento": "faturamento_ano_anterior"}
+            columns={
+                "faturamento": "faturamento_ano_anterior",
+                "ticket_medio": "ticket_medio_ano_anterior",
+            }
         )
 
         df = df.merge(
@@ -772,11 +807,25 @@ class RevenueIntelligencePipeline:
                 errors="coerce",
             ).fillna(0.0)
         )
+        df["ticket_medio_ano_anterior"] = (
+            pd.to_numeric(
+                df["ticket_medio_ano_anterior"],
+                errors="coerce",
+            ).fillna(0.0)
+        )
         df["crescimento_yoy"] = np.where(
             df["faturamento_ano_anterior"] != 0,
             (
                 df["faturamento"]
                 / df["faturamento_ano_anterior"]
+            ) - 1,
+            np.nan,
+        )
+        df["crescimento_ticket_yoy"] = np.where(
+            df["ticket_medio_ano_anterior"] != 0,
+            (
+                df["ticket_medio"]
+                / df["ticket_medio_ano_anterior"]
             ) - 1,
             np.nan,
         )

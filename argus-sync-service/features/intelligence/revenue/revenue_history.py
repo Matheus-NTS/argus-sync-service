@@ -254,11 +254,26 @@ class RevenueHistory:
             )
         )
 
+        monthly["ticket_medio_mes_anterior"] = (
+            monthly["ticket_medio"]
+            .shift(1)
+        )
+
+        monthly["crescimento_ticket_mom"] = (
+            self._calculate_growth(
+                current=monthly["ticket_medio"],
+                previous=monthly[
+                    "ticket_medio_mes_anterior"
+                ],
+            )
+        )
+
         previous_year = monthly[
             [
                 "ano",
                 "mes",
                 "faturamento",
+                "ticket_medio",
             ]
         ].copy()
 
@@ -270,6 +285,8 @@ class RevenueHistory:
             columns={
                 "faturamento":
                     "faturamento_ano_anterior",
+                "ticket_medio":
+                    "ticket_medio_ano_anterior",
             }
         )
 
@@ -291,13 +308,26 @@ class RevenueHistory:
             )
         )
 
+        monthly["crescimento_ticket_yoy"] = (
+            self._calculate_growth(
+                current=monthly["ticket_medio"],
+                previous=monthly[
+                    "ticket_medio_ano_anterior"
+                ],
+            )
+        )
+
         monthly.loc[
             monthly["periodo_futuro"],
             [
                 "faturamento_mes_anterior",
                 "crescimento_mom",
+                "ticket_medio_mes_anterior",
+                "crescimento_ticket_mom",
                 "faturamento_ano_anterior",
                 "crescimento_yoy",
+                "ticket_medio_ano_anterior",
+                "crescimento_ticket_yoy",
             ],
         ] = np.nan
 
@@ -327,7 +357,9 @@ class RevenueHistory:
             "faturamento",
             "ticket_medio",
             "faturamento_mes_anterior",
+            "ticket_medio_mes_anterior",
             "faturamento_ano_anterior",
+            "ticket_medio_ano_anterior",
             "acumulado_ytd",
         ]
 
@@ -338,7 +370,9 @@ class RevenueHistory:
 
         percentage_columns = [
             "crescimento_mom",
+            "crescimento_ticket_mom",
             "crescimento_yoy",
+            "crescimento_ticket_yoy",
         ]
 
         monthly[percentage_columns] = (
@@ -363,8 +397,12 @@ class RevenueHistory:
             "mes_em_aberto",
             "faturamento_mes_anterior",
             "crescimento_mom",
+            "ticket_medio_mes_anterior",
+            "crescimento_ticket_mom",
             "faturamento_ano_anterior",
             "crescimento_yoy",
+            "ticket_medio_ano_anterior",
+            "crescimento_ticket_yoy",
             "acumulado_ytd",
         ]
 
