@@ -1487,6 +1487,105 @@ class ProfitabilityPipeline:
 
         return len(dimension_records)
 
+    def _build_monthly_records(
+        self,
+        dataset,
+        reference_date
+    ):
+
+        eligible = dataset[
+            dataset["elegivel_kpi"]
+        ].copy()
+
+        if eligible.empty:
+            return []
+
+        monthly = (
+            eligible
+            .groupby(
+                ["ano_mes", "ano", "mes"],
+                as_index=False
+            )
+            .agg(
+                faturamento_analisavel=(
+                    "faturamento_analisavel",
+                    "sum"
+                ),
+                custo_analisavel=(
+                    "custo_analisavel",
+                    "sum"
+                ),
+                lucro_analisavel=(
+                    "lucro_analisavel",
+                    "sum"
+                ),
+                linhas_analisaveis=(
+                    "elegivel_kpi",
+                    "size"
+                ),
+            )
+            .sort_values("ano_mes")
+        )
+
+        records = []
+
+        for row in monthly.to_dict(
+            orient="records"
+        ):
+
+            faturamento = self._safe_float(
+                row["faturamento_analisavel"]
+            )
+            custo = self._safe_float(
+                row["custo_analisavel"]
+            )
+            lucro = self._safe_float(
+                row["lucro_analisavel"]
+            )
+
+            margem = (
+                (lucro / faturamento) * 100
+                if faturamento != 0
+                else None
+            )
+
+            markup = (
+                (lucro / custo) * 100
+                if custo != 0
+                else None
+            )
+
+            records.append({
+                "reference_date": reference_date,
+                "ano_mes": str(row["ano_mes"]),
+                "ano": int(row["ano"]),
+                "mes": int(row["mes"]),
+                "faturamento_analisavel": faturamento,
+                "custo_analisavel": custo,
+                "lucro_analisavel": lucro,
+                "margem_percentual": margem,
+                "markup_percentual": markup,
+                "linhas_analisaveis": int(
+                    row["linhas_analisaveis"]
+                ),
+            })
+
+        return records
+
+    def _save_monthly_snapshot(
+        self,
+        reference_date,
+        monthly_records
+    ):
+
+        self.supabase.replace_snapshot(
+            "mart_profitability_monthly",
+            {
+                "reference_date": reference_date,
+            },
+            monthly_records
+        )
+
     def _save_period(
         self,
         reference_date,
@@ -1596,6 +1695,13 @@ class ProfitabilityPipeline:
         )
         quality_builder = (
             ProfitabilityQuality()
+        )
+
+        monthly_records = (
+            self._build_monthly_records(
+                dataset,
+                reference_date
+            )
         )
 
         periods_to_generate = (
@@ -1781,6 +1887,16 @@ class ProfitabilityPipeline:
                 ],
                 "status": overview["status"],
             }
+
+        self._save_monthly_snapshot(
+            reference_date,
+            monthly_records
+        )
+
+        print(
+            "  Serie mensal de rentabilidade: "
+            f"{len(monthly_records)} mes(es)"
+        )
 
         ytd_result = period_results.get(
             "ytd",
