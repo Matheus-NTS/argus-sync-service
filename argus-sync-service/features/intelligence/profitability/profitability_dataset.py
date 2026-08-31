@@ -6,12 +6,6 @@ import pandas as pd
 
 class ProfitabilityDataset:
 
-    OFFICIAL_COMPANIES = {
-        "NTS RIO",
-        "NTS SAO PAULO",
-        "NTS BELEM",
-    }
-
     @staticmethod
     def normalize_text(value):
 
@@ -366,9 +360,16 @@ class ProfitabilityDataset:
             base["status_custo"] == "valido"
         )
 
+        # A validade comercial da venda j? foi estabelecida antes
+        # pelo PedidoTransformer.filter_revenue_orders().
+        #
+        # A Rentabilidade n?o mant?m whitelist pr?pria de empresas:
+        # qualquer empresa comercial v?lida presente na origem deve
+        # participar automaticamente dos KPIs, inclusive empresas futuras.
         base["empresa_oficial"] = (
             base["empresa_key"]
-            .isin(self.OFFICIAL_COMPANIES)
+            .notna()
+            & base["empresa_key"].astype(str).str.strip().ne("")
         )
 
         base["produto_fora_escopo"] = (
