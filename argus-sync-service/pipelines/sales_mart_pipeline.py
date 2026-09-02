@@ -89,6 +89,7 @@ class SalesMartPipeline:
         self._save_categories(category_df_all, filters)
 
         customer_daily_records = 0
+        customer_acquisition_records = 0
         product_daily_records = 0
         category_daily_records = 0
         seller_daily_records = 0
@@ -110,6 +111,25 @@ class SalesMartPipeline:
                 reference_date=filters["reference_date"]
             )
             historical_timings["customer_daily_save"] = (
+                perf_counter() - started_at
+            )
+
+            started_at = perf_counter()
+            customer_acquisition_df = (
+                self._build_customer_acquisition(pedidos)
+            )
+            historical_timings["customer_acquisition_build"] = (
+                perf_counter() - started_at
+            )
+
+            started_at = perf_counter()
+            customer_acquisition_records = (
+                self._save_customer_acquisition(
+                    customer_acquisition_df,
+                    reference_date=filters["reference_date"]
+                )
+            )
+            historical_timings["customer_acquisition_save"] = (
                 perf_counter() - started_at
             )
 
@@ -212,6 +232,11 @@ class SalesMartPipeline:
                     "customer_daily_save",
                 ),
                 (
+                    "Customer acquisition",
+                    "customer_acquisition_build",
+                    "customer_acquisition_save",
+                ),
+                (
                     "Product daily",
                     "product_daily_build",
                     "product_daily_save",
@@ -272,6 +297,7 @@ class SalesMartPipeline:
             "customer_df_all": customer_df_all,
             "category_df_all": category_df_all,
             "customer_daily_records": customer_daily_records,
+            "customer_acquisition_records": customer_acquisition_records,
             "product_daily_records": product_daily_records,
             "category_daily_records": category_daily_records,
             "seller_daily_records": seller_daily_records,
@@ -1703,6 +1729,259 @@ class SalesMartPipeline:
             records=records,
             reference_date=reference_date
         )
+
+    def _build_customer_acquisition(self, pedidos):
+
+        columns = [
+            "Empresa",
+            "codigo_cliente",
+            "Cliente",
+            "primeira_compra",
+        ]
+
+        if pedidos is None or pedidos.empty:
+            return pd.DataFrame(columns=columns)
+
+        required = {
+            "Data",
+            "Empresa",
+            "codigo_cliente",
+            "Cliente",
+            "Valor_total_Unitario",
+        }
+
+        missing = required.difference(pedidos.columns)
+
+        if missing:
+            raise ValueError(
+                "Nao foi possivel gerar aquisicao de clientes. "
+                f"Colunas ausentes: {sorted(missing)}"
+            )
+
+        df = pedidos[
+            [
+                "Data",
+                "Empresa",
+                "codigo_cliente",
+                "Cliente",
+                "Valor_total_Unitario",
+            ]
+        ].copy()
+
+        df["Data"] = pd.to_datetime(
+            df["Data"],
+            errors="coerce"
+        )
+
+        df["Valor_total_Unitario"] = pd.to_numeric(
+            df["Valor_total_Unitario"],
+            errors="coerce"
+        ).fillna(0)
+
+        df = df.dropna(
+            subset=[
+                "Data",
+                "Empresa",
+                "codigo_cliente",
+                "Cliente",
+            ]
+        )
+
+        if df.empty:
+            return pd.DataFrame(columns=columns)
+
+        df["Empresa"] = (
+            df["Empresa"]
+            .astype(str)
+            .str.strip()
+        )
+
+        df["codigo_cliente"] = (
+            df["codigo_cliente"]
+            .astype(str)
+            .str.strip()
+        )
+
+        df["Cliente"] = (
+            df["Cliente"]
+            .astype(str)
+            .str.strip()
+        )
+
+        df = df[
+            (df["Empresa"] != "")
+            & (df["codigo_cliente"] != "")
+            & (df["Cliente"] != "")
+        ].copy()
+
+        if df.empty:
+            return pd.DataFrame(columns=columns)
+
+        # Primeira compra GLOBAL do cliente no grupo.
+        first_global = (
+            df.groupby(
+                "codigo_cliente",
+                as_index=False
+            )
+            .agg(
+                primeira_compra=("Data", "min"),
+            )
+        )
+
+        # Mantem somente os movimentos ocorridos
+        # exatamente na primeira data global.
+        first_day = df.merge(
+            first_global,
+            on="codigo_cliente",
+            how="inner"
+        )
+
+        first_day = first_day[
+            first_day["Data"]
+            == first_day["primeira_compra"]
+        ].copy()
+
+        # Consolida o primeiro dia por empresa.
+        # Quando duas empresas aparecem na mesma primeira data,
+        # a aquisicao fica com a empresa de maior faturamento.
+        acquisition_company = (
+            first_day.groupby(
+                [
+                    "codigo_cliente",
+                    "Empresa",
+                    "primeira_compra",
+                ],
+                as_index=False
+            )
+            .agg(
+                Cliente=("Cliente", "first"),
+                faturamento_primeiro_dia=(
+                    "Valor_total_Unitario",
+                    "sum"
+                ),
+            )
+            .sort_values(
+                [
+                    "codigo_cliente",
+                    "faturamento_primeiro_dia",
+                    "Empresa",
+                ],
+                ascending=[
+                    True,
+                    False,
+                    True,
+                ],
+                kind="stable"
+            )
+            .drop_duplicates(
+                subset=["codigo_cliente"],
+                keep="first"
+            )
+            .reset_index(drop=True)
+        )
+
+        by_company = acquisition_company[
+            [
+                "Empresa",
+                "codigo_cliente",
+                "Cliente",
+                "primeira_compra",
+            ]
+        ].copy()
+
+        # TOTAL representa exatamente a mesma aquisicao,
+        # sem recalcular uma segunda regra.
+        total = by_company.copy()
+        total["Empresa"] = "TOTAL"
+
+        result = pd.concat(
+            [
+                by_company,
+                total,
+            ],
+            ignore_index=True
+        )
+
+        result["primeira_compra"] = pd.to_datetime(
+            result["primeira_compra"],
+            errors="coerce"
+        ).dt.date
+
+        result = (
+            result[
+                [
+                    "Empresa",
+                    "codigo_cliente",
+                    "Cliente",
+                    "primeira_compra",
+                ]
+            ]
+            .drop_duplicates(
+                subset=["Empresa", "codigo_cliente"],
+                keep="first"
+            )
+            .sort_values(
+                [
+                    "Empresa",
+                    "primeira_compra",
+                    "codigo_cliente",
+                ],
+                kind="stable"
+            )
+            .reset_index(drop=True)
+        )
+
+        return result
+    def _save_customer_acquisition(
+        self,
+        customer_acquisition_df,
+        reference_date
+    ):
+
+        filters = {
+            "reference_date": reference_date
+        }
+
+        records = []
+
+        if (
+            customer_acquisition_df is not None
+            and not customer_acquisition_df.empty
+        ):
+            for _, row in customer_acquisition_df.iterrows():
+
+                primeira_compra = pd.to_datetime(
+                    row["primeira_compra"],
+                    errors="coerce"
+                )
+
+                if pd.isna(primeira_compra):
+                    continue
+
+                records.append({
+                    "reference_date": reference_date,
+                    "empresa": row["Empresa"],
+                    "codigo_cliente": str(
+                        row["codigo_cliente"]
+                    ),
+                    "cliente": row["Cliente"],
+                    "primeira_compra": (
+                        primeira_compra.date().isoformat()
+                    ),
+                })
+
+        print(
+            "  Publicando aquisicao de clientes: "
+            f"{len(records):,} registros"
+        )
+
+        self.supabase.replace_snapshot(
+            "mart_sales_customer_acquisition",
+            filters,
+            records
+        )
+
+        return len(records)
 
     def _build_customer_daily(self, pedidos):
 
