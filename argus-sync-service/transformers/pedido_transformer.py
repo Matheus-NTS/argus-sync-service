@@ -217,15 +217,27 @@ class PedidoTransformer:
             )
         )
 
-        # Inclui qualquer variação comercial iniciada por CT 30.
-        valid_ct30_mask = (
-            tipo_pedido_normalizado
-            .str.startswith("CT 30")
+        # Familias comerciais validas.
+        #
+        # A regra por familia evita manutencao manual quando surgirem
+        # novas variacoes de CT ou SERVICO.
+        #
+        # O espaco apos o prefixo evita aceitar valores alheios como
+        # CTE ou SERVICOXYZ.
+        valid_ct_family_mask = (
+            tipo_pedido_normalizado.eq("CT")
+            | tipo_pedido_normalizado.str.startswith("CT ")
+        )
+
+        valid_service_family_mask = (
+            tipo_pedido_normalizado.eq("SERVICO")
+            | tipo_pedido_normalizado.str.startswith("SERVICO ")
         )
 
         valid_order_type_mask = (
             valid_exact_type_mask
-            | valid_ct30_mask
+            | valid_ct_family_mask
+            | valid_service_family_mask
         )
 
         excluded_seller_mask = (
