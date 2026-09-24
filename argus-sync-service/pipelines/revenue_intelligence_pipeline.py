@@ -10,6 +10,9 @@ from features.intelligence.revenue.meta_dataset import MetaDataset
 from features.intelligence.revenue.revenue_daily import RevenueDaily
 from features.intelligence.revenue.revenue_history import RevenueHistory
 from features.intelligence.revenue.revenue_overview import RevenueOverview
+from features.intelligence.revenue.revenue_annual_forecast import (
+    RevenueAnnualForecast,
+)
 from features.intelligence.revenue.revenue_projection import (
     RevenueProjection,
 )
@@ -257,6 +260,21 @@ class RevenueIntelligencePipeline:
             "faturamento_ytd_ano_anterior",
             "crescimento_ytd",
         ],
+        "mart_revenue_annual_forecast": [
+            "reference_date",
+            "ano",
+            "ultimo_mes_fechado",
+            "meses_fechados",
+            "faturamento_fechado",
+            "faturamento_mes_aberto",
+            "faturamento_realizado",
+            "media_mensal_fechada",
+            "forecast_anual",
+            "restante_estimado",
+            "faturamento_ano_anterior",
+            "crescimento_projetado",
+            "metodo",
+        ],
         "mart_revenue_projection_monthly": [
             "reference_date",
             "ano_base",
@@ -501,6 +519,14 @@ class RevenueIntelligencePipeline:
 
         # O bloco abaixo permanece pronto para a próxima etapa.
         # Ele será alcançado após removermos o SystemExit temporário.
+        annual_forecast_service = RevenueAnnualForecast(
+            reference_date=reference_date,
+        )
+
+        annual_forecast = annual_forecast_service.build(
+            revenue_df=revenue,
+        )
+
         projection_service = RevenueProjection(
             reference_date=reference_date,
         )
@@ -558,6 +584,9 @@ class RevenueIntelligencePipeline:
             ),
             "mart_revenue_yearly": yearly_mart,
             "mart_revenue_ytd": ytd_mart,
+            "mart_revenue_annual_forecast": (
+                annual_forecast
+            ),
             "mart_revenue_projection_monthly": (
                 projection_monthly
             ),
