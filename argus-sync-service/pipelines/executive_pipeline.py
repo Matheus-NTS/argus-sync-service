@@ -3,6 +3,7 @@ from datetime import datetime
 from extractors.pedido_extractor import PedidoExtractor
 from extractors.meta_extractor import MetaExtractor
 from transformers.pedido_transformer import PedidoTransformer
+from transformers.commercial_adjustment_transformer import CommercialAdjustmentTransformer
 from transformers.period_transformer import PeriodTransformer
 from services.goal_metrics import GoalMetrics
 from features.executive_dashboard.executive_dashboard import ExecutiveDashboard
@@ -109,6 +110,10 @@ class ExecutivePipeline:
         pedidos = PedidoExtractor(self.sql_connector).extract()
         metas = MetaExtractor(self.sql_connector).extract()
         pedidos = PedidoTransformer().filter_revenue_orders(
+            pedidos
+        )
+
+        pedidos = CommercialAdjustmentTransformer().apply(
             pedidos
         )
 

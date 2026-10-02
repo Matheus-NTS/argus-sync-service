@@ -5,6 +5,7 @@ import pandas as pd
 from extractors.produto_extractor import ProdutoExtractor
 from extractors.pedido_extractor import PedidoExtractor
 from transformers.pedido_transformer import PedidoTransformer
+from transformers.commercial_adjustment_transformer import CommercialAdjustmentTransformer
 from services.product_metadata_cache import ProductMetadataCache
 
 from features.intelligence.stock.stock_snapshot import StockSnapshot
@@ -57,6 +58,10 @@ class StockPipeline:
 
         pedido_transformer = PedidoTransformer()
         vendas = pedido_transformer.filter_revenue_orders(vendas)
+
+        vendas = CommercialAdjustmentTransformer().apply(
+            vendas
+        )
 
         stock_snapshot = StockSnapshot()
         stock_df = stock_snapshot.build(estoque, vendas)

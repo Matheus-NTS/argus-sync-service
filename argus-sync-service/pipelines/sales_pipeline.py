@@ -6,6 +6,7 @@ from config.periods import MVP_PERIODS, resolve_window
 
 from extractors.pedido_extractor import PedidoExtractor
 from transformers.pedido_transformer import PedidoTransformer
+from transformers.commercial_adjustment_transformer import CommercialAdjustmentTransformer
 from extractors.meta_extractor import MetaExtractor
 from pipelines.sales_mart_pipeline import SalesMartPipeline
 from pipelines.commercial_intelligence_pipeline import CommercialIntelligencePipeline
@@ -52,6 +53,13 @@ class SalesPipeline:
         pedidos, stage_timings["pedido_filter"] = _timed_stage(
             "PedidoTransformer.filter_revenue_orders",
             lambda: PedidoTransformer().filter_revenue_orders(
+                pedidos
+            ),
+        )
+
+        pedidos, stage_timings["commercial_adjustments"] = _timed_stage(
+            "CommercialAdjustmentTransformer.apply",
+            lambda: CommercialAdjustmentTransformer().apply(
                 pedidos
             ),
         )

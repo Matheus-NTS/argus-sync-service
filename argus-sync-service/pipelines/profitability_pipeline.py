@@ -19,6 +19,9 @@ from extractors.produto_extractor import (
 from transformers.pedido_transformer import (
     PedidoTransformer,
 )
+from transformers.commercial_adjustment_transformer import (
+    CommercialAdjustmentTransformer,
+)
 from transformers.produto_transformer import (
     ProdutoTransformer,
 )
@@ -1661,6 +1664,13 @@ class ProfitabilityPipeline:
             PedidoTransformer()
             .filter_revenue_orders(
                 orders_raw
+            )
+        )
+
+        orders = (
+            CommercialAdjustmentTransformer()
+            .apply(
+                orders
             )
         )
 
