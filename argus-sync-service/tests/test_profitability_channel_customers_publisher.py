@@ -20,7 +20,7 @@ from features.intelligence.profitability.profitability_channel_customers_publish
 def sample():
     return pd.DataFrame({
         "codigo_cliente_normalizado": ["101", "102", "103"],
-        "segmento": ["Atacado", "Varejo", "N\\u00e3o classificados"],
+        "segmento": ["Atacado", "Varejo", "N\u00e3o classificados"],
     })
 
 
@@ -33,6 +33,18 @@ def connector():
 
 
 class ChannelCustomersPublisherTests(unittest.TestCase):
+
+    def test_segments_match_official_classification(self):
+        from features.intelligence.profitability.profitability_channel import _segment
+        from features.intelligence.profitability.profitability_channel_customers_publisher import SEGMENTS
+
+        official_segments = {
+            _segment("REVENDA"),
+            _segment("CONSUMIDOR FINAL"),
+            _segment(None),
+        }
+
+        self.assertEqual(SEGMENTS, official_segments)
 
     def test_payload_and_no_mutation(self):
         source = sample()

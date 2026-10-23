@@ -16,7 +16,7 @@ PUBLISH_RPC = "argus_publish_profitability_channel_customers"
 SEGMENTS = frozenset({
     "Atacado",
     "Varejo",
-    "N\\u00e3o classificados",
+    "N\u00e3o classificados",
 })
 
 
