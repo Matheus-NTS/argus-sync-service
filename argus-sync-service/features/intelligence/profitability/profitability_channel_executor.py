@@ -21,6 +21,8 @@ from features.intelligence.profitability.profitability_channel import (
     read_customer_classifications,
 )
 
+from features.intelligence.profitability.profitability_channel_detail import build_channel_detail
+
 
 def build_profitability_channel_snapshot(sql_connector):
     """Retorna (dados_por_canal, inicio_da_extracao_utc).
@@ -62,3 +64,25 @@ def build_profitability_channel_snapshot(sql_connector):
     channel_daily = build_channel_daily(dataset, customers)
 
     return channel_daily, source_as_of
+
+
+def build_profitability_channel_full_snapshot(sql_connector):
+    """Constroi agregado e detalhe em uma unica extracao, sem publicar."""
+    source_as_of = datetime.now(timezone.utc)
+
+    orders_raw = PedidoExtractor(sql_connector).extract()
+    products_raw = ProdutoExtractor(sql_connector).extract()
+
+    orders = PedidoTransformer().filter_revenue_orders(orders_raw)
+    orders = CommercialAdjustmentTransformer().apply(orders)
+    products = ProdutoTransformer().prepare(products_raw)
+
+    dataset = ProfitabilityDataset().build(orders, products)
+    dataset = dataset.loc[dataset["data_venda"].notna()].copy()
+
+    customers = read_customer_classifications(sql_connector)
+
+    channel_daily = build_channel_daily(dataset, customers)
+    channel_detail = build_channel_detail(dataset, customers)
+
+    return channel_daily, channel_detail, source_as_of
