@@ -78,5 +78,101 @@ class ChannelAnalyticsTests(unittest.TestCase):
             build_channel_overview(data)
 
 
+
+
+class ChannelGroupedTests(unittest.TestCase):
+
+    def sample(self):
+        return pd.DataFrame({
+            "empresa_key": ["RJ", "RJ", "SP", "SP", "RJ"],
+            "vendedor": ["Ana", "Bruno", "Ana", None, "Ana"],
+            "segmento": [
+                "Atacado", "Atacado", "Varejo",
+                "Varejo", "Atacado",
+            ],
+            "elegivel_kpi": [True, True, True, True, False],
+            "faturamento_analisavel": [100.0, 300.0, 200.0, 50.0, None],
+            "custo_analisavel": [60.0, 150.0, 100.0, 25.0, None],
+            "lucro_analisavel": [40.0, 150.0, 100.0, 25.0, None],
+        })
+
+    def test_company_and_seller_reconcile_with_overview(self):
+        from features.intelligence.profitability.profitability_channel_analytics import (
+            build_channel_grouped,
+        )
+
+        data = self.sample()
+        general = build_channel_overview(data)
+
+        for dimensions in (
+            ("empresa_key",),
+            ("vendedor",),
+            ("empresa_key", "vendedor"),
+        ):
+            grouped = build_channel_grouped(data, dimensions)
+
+            for column in (
+                "faturamento_analisavel",
+                "custo_analisavel",
+                "lucro_analisavel",
+            ):
+                self.assertAlmostEqual(
+                    grouped[column].sum(),
+                    general[column].sum(),
+                )
+
+            self.assertEqual(
+                grouped["ocorrencias"].sum(),
+                general["ocorrencias"].sum(),
+            )
+
+    def test_missing_seller_is_preserved(self):
+        from features.intelligence.profitability.profitability_channel_analytics import (
+            build_channel_grouped,
+        )
+
+        result = build_channel_grouped(
+            self.sample(), ("empresa_key", "vendedor")
+        )
+
+        missing = result.loc[
+            result["vendedor"].isna()
+            & result["segmento"].eq("Varejo")
+        ]
+
+        self.assertEqual(len(missing), 1)
+        self.assertEqual(
+            missing.iloc[0]["faturamento_analisavel"], 50
+        )
+
+    def test_grouped_does_not_mutate_input(self):
+        from features.intelligence.profitability.profitability_channel_analytics import (
+            build_channel_grouped,
+        )
+
+        data = self.sample()
+        original = data.copy(deep=True)
+
+        build_channel_grouped(data, ("empresa_key", "vendedor"))
+
+        assert_frame_equal(data, original)
+
+    def test_invalid_dimensions_are_rejected(self):
+        from features.intelligence.profitability.profitability_channel_analytics import (
+            build_channel_grouped,
+        )
+
+        data = self.sample()
+
+        for dimensions in (
+            (),
+            ("segmento",),
+            ("empresa_key", "empresa_key"),
+        ):
+            with self.subTest(dimensions=dimensions):
+                with self.assertRaises(ValueError):
+                    build_channel_grouped(data, dimensions)
+
+
 if __name__ == "__main__":
     unittest.main()

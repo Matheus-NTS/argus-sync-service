@@ -63,3 +63,58 @@ def build_channel_overview(detail: pd.DataFrame) -> pd.DataFrame:
         })
 
     return pd.DataFrame(rows)
+
+
+GROUPABLE_DIMENSIONS = ("empresa_key", "vendedor")
+
+
+def build_channel_grouped(
+    detail: pd.DataFrame,
+    dimensions: tuple[str, ...],
+) -> pd.DataFrame:
+    """Agrupa por dimensoes comerciais reutilizando o overview."""
+
+    if not dimensions:
+        raise ValueError("Informe ao menos uma dimensao")
+
+    if len(dimensions) != len(set(dimensions)):
+        raise ValueError("Dimensoes duplicadas")
+
+    if any(dimension not in GROUPABLE_DIMENSIONS for dimension in dimensions):
+        raise ValueError("Dimensao nao permitida")
+
+    missing = set(dimensions) - set(detail.columns)
+
+    if missing:
+        raise KeyError(f"Colunas ausentes: {sorted(missing)}")
+
+    frames = []
+
+    for keys, group in detail.groupby(
+        list(dimensions),
+        dropna=False,
+        sort=False,
+    ):
+        if not isinstance(keys, tuple):
+            keys = (keys,)
+
+        overview = build_channel_overview(group)
+
+        for dimension, value in zip(dimensions, keys):
+            overview[dimension] = value
+
+        frames.append(overview)
+
+    columns = [
+        *dimensions,
+        "segmento",
+        "ocorrencias",
+        *FINANCIAL_COLUMNS,
+        "margem_percentual",
+        "markup_percentual",
+    ]
+
+    if not frames:
+        return pd.DataFrame(columns=columns)
+
+    return pd.concat(frames, ignore_index=True)[columns]
