@@ -1,3 +1,4 @@
+import os
 from time import perf_counter
 from connectors.sql_server import SQLServerConnector
 from connectors.supabase_connector import SupabaseConnector
@@ -9,6 +10,7 @@ from pipelines.stock_pipeline import StockPipeline
 from pipelines.customer_geo_pipeline import CustomerGeoPipeline
 from pipelines.lost_sales_pipeline import LostSalesPipeline
 from pipelines.profitability_pipeline import ProfitabilityPipeline
+from features.intelligence.profitability.profitability_channel_coordinator import ProfitabilityChannelCoordinator
 from services.pipeline_state import mark_pipeline_success
 from services.sync_run_lock import (
     SyncAlreadyRunningError,
@@ -37,6 +39,7 @@ def run_timed(label, callback):
 
 def main():
     main_started_at = perf_counter()
+    channel_enabled = os.getenv("ARGUS_PROFITABILITY_CHANNEL_ENABLED") == "1"
 
     print("=" * 60)
     print("ARGUS SYNC SERVICE")
@@ -92,6 +95,15 @@ def main():
         sql_connector,
         supabase_connector
     )
+
+    # Canal Atacado x Varejo: integracao isolada e opt-in.
+    if channel_enabled:
+        channel_coordinator = ProfitabilityChannelCoordinator(
+            sql_connector,
+            supabase_connector,
+        )
+        profitability.on_dataset_ready = channel_coordinator
+
     profitability_result, profitability_elapsed = run_timed(
         "Profitability Pipeline",
         profitability.run,
@@ -432,6 +444,41 @@ def main():
         f"  Status YTD: "
         f"{profitability_result['ytd_status']}"
     )
+
+    # Resultado independente do canal Atacado x Varejo.
+    if channel_enabled:
+        channel_result = channel_coordinator.last_result
+
+        print()
+        print("=== RENTABILIDADE POR CANAL ===")
+
+        if channel_result is None:
+            print("  Status: NOT_EXECUTED")
+        else:
+            print(f"  Status: {channel_result['status']}")
+            print(
+                "  Clientes publicados: "
+                f"{channel_result['customers_published']}"
+            )
+            print(
+                "  Financeiro publicado: "
+                f"{channel_result['financial_published']}"
+            )
+
+            if channel_result.get("publication_unconfirmed"):
+                print("  ATENCAO: publicacao sem confirmacao.")
+                print("  Verificar auditoria antes de repetir.")
+
+            if channel_result.get("failed_phase"):
+                print(
+                    "  Fase com falha: "
+                    f"{channel_result['failed_phase']}"
+                )
+                print(
+                    "  Erro: "
+                    f"{channel_result.get('error_type')}: "
+                    f"{channel_result.get('error_message')}"
+                )
 
     print()
     print("✓ Lost Sales Pipeline finalizada")

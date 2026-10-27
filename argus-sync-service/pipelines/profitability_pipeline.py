@@ -105,6 +105,9 @@ class ProfitabilityPipeline:
         self.sql_connector = sql_connector
         self.supabase = supabase_connector
 
+        # Extensao opcional, desativada por padrao.
+        self.on_dataset_ready = None
+
     @staticmethod
     def _safe_float(value, default=0.0):
 
@@ -1902,6 +1905,9 @@ class ProfitabilityPipeline:
             reference_date,
             monthly_records
         )
+
+        if self.on_dataset_ready is not None:
+            self.on_dataset_ready(dataset.copy())
 
         print(
             "  Serie mensal de rentabilidade: "
