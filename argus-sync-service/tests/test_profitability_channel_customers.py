@@ -82,5 +82,45 @@ class ChannelCustomersTests(unittest.TestCase):
             prepare_channel_customers(source)
 
 
+    def test_financial_customer_without_registration_is_included(self):
+        source = pd.DataFrame({
+            "Codigo_Cliente": ["4696"],
+            "Classificacao_1": ["BOMBISTA"],
+        })
+        financial = pd.DataFrame({
+            "codigo_cliente_normalizado": ["3750", "4696"],
+            "segmento": ["N\u00e3o classificados", "Varejo"],
+        })
+
+        result = prepare_channel_customers(
+            source,
+            financial_frame=financial,
+        )
+
+        segments = result.set_index(
+            "codigo_cliente_normalizado"
+        )["segmento"]
+
+        self.assertEqual(len(result), 2)
+        self.assertEqual(segments.loc["3750"], "N\u00e3o classificados")
+        self.assertEqual(segments.loc["4696"], "Varejo")
+
+    def test_financial_customer_with_conflicting_segment_is_rejected(self):
+        source = pd.DataFrame({
+            "Codigo_Cliente": ["4696"],
+            "Classificacao_1": ["BOMBISTA"],
+        })
+        financial = pd.DataFrame({
+            "codigo_cliente_normalizado": ["4696"],
+            "segmento": ["Atacado"],
+        })
+
+        with self.assertRaises(ValueError):
+            prepare_channel_customers(
+                source,
+                financial_frame=financial,
+            )
+
+
 if __name__ == "__main__":
     unittest.main()

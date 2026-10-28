@@ -61,13 +61,14 @@ class ProfitabilityChannelCoordinator:
                 self.sql_connector
             )
 
-            customer_frame = prepare_channel_customers(
-                customers
-            )
-
             financial_frame = build_channel_daily(
                 dataset,
                 customers,
+            )
+
+            customer_frame = prepare_channel_customers(
+                customers,
+                financial_frame=financial_frame,
             )
 
             phase = "customers"

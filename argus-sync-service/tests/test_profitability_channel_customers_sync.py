@@ -2,7 +2,7 @@
 
 import unittest
 from datetime import datetime, timezone
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pandas as pd
 
@@ -23,7 +23,8 @@ class ProfitabilityChannelCustomersSyncTests(unittest.TestCase):
     @patch(f"{MODULE}.read_customer_classifications")
     def test_valid_customers_are_published(self, read_mock, publisher_class):
         sql_connector = object()
-        supabase_connector = object()
+        supabase_connector = Mock()
+        supabase_connector.select_rows_paginated.return_value = []
 
         read_mock.return_value = pd.DataFrame({
             "Codigo_Cliente": [" 001 ", "002", "003"],
@@ -78,7 +79,7 @@ class ProfitabilityChannelCustomersSyncTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             sync_profitability_channel_customers(
                 object(),
-                object(),
+                Mock(select_rows_paginated=Mock(return_value=[])),
             )
 
         publisher_class.assert_not_called()
@@ -95,6 +96,81 @@ class ProfitabilityChannelCustomersSyncTests(unittest.TestCase):
                 object(),
                 object(),
             )
+
+        publisher_class.assert_not_called()
+
+
+    @patch(f"{MODULE}.ProfitabilityChannelCustomersPublisher")
+    @patch(f"{MODULE}.read_customer_classifications")
+    def test_financial_customer_without_registration_is_preserved(
+        self, read_mock, publisher_class
+    ):
+        read_mock.return_value = pd.DataFrame({
+            "Codigo_Cliente": ["4696"],
+            "Classificacao_1": ["BOMBISTA"],
+        })
+
+        supabase = Mock()
+        supabase.select_rows_paginated.return_value = [
+            {"codigo_cliente_normalizado": "3750"},
+            {"codigo_cliente_normalizado": "4696"},
+        ]
+
+        sync_profitability_channel_customers(object(), supabase)
+
+        supabase.select_rows_paginated.assert_called_once_with(
+            "mart_profitability_channel_daily",
+            columns="codigo_cliente_normalizado",
+            order_by="id",
+        )
+
+        frame = publisher_class.return_value.publish.call_args.args[0]
+        segments = frame.set_index(
+            "codigo_cliente_normalizado"
+        )["segmento"].to_dict()
+
+        self.assertEqual(segments, {
+            "3750": "N\u00e3o classificados",
+            "4696": "Varejo",
+        })
+
+    @patch(f"{MODULE}.ProfitabilityChannelCustomersPublisher")
+    @patch(f"{MODULE}.read_customer_classifications")
+    def test_current_sql_classification_takes_precedence(
+        self, read_mock, publisher_class
+    ):
+        read_mock.return_value = pd.DataFrame({
+            "Codigo_Cliente": ["4696"],
+            "Classificacao_1": ["REVENDA"],
+        })
+
+        supabase = Mock()
+        supabase.select_rows_paginated.return_value = [
+            {"codigo_cliente_normalizado": "4696"},
+        ]
+
+        sync_profitability_channel_customers(object(), supabase)
+
+        frame = publisher_class.return_value.publish.call_args.args[0]
+        self.assertEqual(frame.iloc[0]["segmento"], "Atacado")
+
+    @patch(f"{MODULE}.ProfitabilityChannelCustomersPublisher")
+    @patch(f"{MODULE}.read_customer_classifications")
+    def test_financial_read_failure_blocks_publication(
+        self, read_mock, publisher_class
+    ):
+        read_mock.return_value = pd.DataFrame({
+            "Codigo_Cliente": ["4696"],
+            "Classificacao_1": ["BOMBISTA"],
+        })
+
+        supabase = Mock()
+        supabase.select_rows_paginated.side_effect = RuntimeError(
+            "Supabase unavailable"
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "Supabase unavailable"):
+            sync_profitability_channel_customers(object(), supabase)
 
         publisher_class.assert_not_called()
 

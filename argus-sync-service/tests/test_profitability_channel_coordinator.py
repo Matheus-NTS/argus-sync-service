@@ -83,7 +83,10 @@ class ProfitabilityChannelCoordinatorTests(unittest.TestCase):
             )
 
             read_mock.assert_called_once_with(self.sql)
-            prepare_mock.assert_called_once_with(self.customers)
+            prepare_mock.assert_called_once_with(
+                self.customers,
+                financial_frame=self.financial_frame,
+            )
             build_mock.assert_called_once_with(
                 self.dataset,
                 self.customers,
