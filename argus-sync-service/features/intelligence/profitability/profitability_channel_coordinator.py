@@ -1,6 +1,7 @@
 """Coordenacao isolada das publicacoes Atacado x Varejo."""
 
 import logging
+import os
 from datetime import datetime
 
 from features.intelligence.profitability.profitability_channel import (
@@ -19,6 +20,8 @@ from features.intelligence.profitability.profitability_channel_time import (
 from features.intelligence.profitability.profitability_channel_publisher import (
     ProfitabilityChannelPublisher,
 )
+from features.intelligence.profitability.profitability_channel_detail import build_channel_detail
+from features.intelligence.profitability.profitability_channel_detail_publisher import ProfitabilityChannelDetailPublisher
 
 
 LOGGER = logging.getLogger(__name__)
@@ -43,6 +46,8 @@ class ProfitabilityChannelCoordinator:
             "status": "not_started",
             "customers_published": False,
             "financial_published": False,
+            "detail_published": False,
+            "detail_result": None,
             "customers_result": None,
             "financial_result": None,
         }
@@ -96,6 +101,19 @@ class ProfitabilityChannelCoordinator:
             )
 
             result["financial_published"] = True
+
+            if os.getenv("ARGUS_PROFITABILITY_CHANNEL_DETAIL_ENABLED") == "1":
+                phase = "detail"
+                detail_frame = build_channel_detail(dataset, customers)
+                detail_publisher = ProfitabilityChannelDetailPublisher(
+                    self.supabase_connector
+                )
+                result["detail_result"] = detail_publisher.publish(
+                    detail_frame,
+                    source_as_of=source_as_of,
+                )
+                result["detail_published"] = True
+
             result["status"] = "success"
 
         except Exception as exc:
@@ -103,7 +121,11 @@ class ProfitabilityChannelCoordinator:
 
             result["status"] = (
                 "partial_failure"
-                if result["customers_published"]
+                if (
+                    result["customers_published"]
+                    or result["financial_published"]
+                    or result["detail_published"]
+                )
                 else "failed"
             )
 
